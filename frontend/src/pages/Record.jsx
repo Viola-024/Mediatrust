@@ -4,16 +4,14 @@ import axios from 'axios';
 
 function Record() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('record'); // 'record' or 'upload'
+  const [activeTab, setActiveTab] = useState('record');
 
-  // Auth state
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [token, setToken] = useState('');
   const [loggedIn, setLoggedIn] = useState(false);
 
-  // Recording state
-  const [cameraMode, setCameraMode] = useState('video'); // 'video' or 'photo'
+  const [cameraMode, setCameraMode] = useState('video');
   const [recording, setRecording] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
   const [capturedMedia, setCapturedMedia] = useState(null);
@@ -23,16 +21,13 @@ function Record() {
   const streamRef = useRef(null);
   const chunksRef = useRef([]);
 
-  // Upload state
   const [selectedFile, setSelectedFile] = useState(null);
   const [declaration, setDeclaration] = useState(false);
 
-  // Shared state
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Cleanup camera on unmount
   useEffect(() => {
     return () => {
       if (streamRef.current) {
@@ -55,7 +50,6 @@ function Record() {
     }
   };
 
-  // Start camera
   const startCamera = async () => {
     try {
       setError('');
@@ -75,7 +69,6 @@ function Record() {
     }
   };
 
-  // Stop camera
   const stopCamera = () => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
@@ -88,7 +81,6 @@ function Record() {
     setRecording(false);
   };
 
-  // Start recording video
   const startRecording = () => {
     if (!streamRef.current) return;
     chunksRef.current = [];
@@ -110,7 +102,6 @@ function Record() {
     setRecording(true);
   };
 
-  // Stop recording video
   const stopRecording = () => {
     if (mediaRecorderRef.current) {
       mediaRecorderRef.current.stop();
@@ -119,7 +110,6 @@ function Record() {
     stopCamera();
   };
 
-  // Capture photo
   const capturePhoto = () => {
     if (!videoRef.current) return;
     const canvas = document.createElement('canvas');
@@ -135,7 +125,6 @@ function Record() {
     }, 'image/png');
   };
 
-  // Upload captured media
   const handleCapturedUpload = async () => {
     if (!capturedMedia) return;
     if (!declaration) {
@@ -147,7 +136,6 @@ function Record() {
     setError('');
 
     try {
-      // Get GPS
       let latitude = '12.9716';
       let longitude = '77.5946';
       try {
@@ -186,7 +174,6 @@ function Record() {
     }
   };
 
-  // Upload file (existing logic)
   const handleUpload = async () => {
     if (!selectedFile) {
       setError('Please select a file.');
@@ -226,166 +213,187 @@ function Record() {
 
   return (
     <div style={styles.container}>
-      <div style={styles.card}>
-        <button style={styles.backBtn} onClick={() => { stopCamera(); navigate('/'); }}>← Back</button>
-        <h2 style={styles.title}>🎥 MediaTrust Capture</h2>
-
-        {/* Tab Switcher */}
-        <div style={styles.tabRow}>
-          <button
-            style={activeTab === 'record' ? styles.tabActive : styles.tabInactive}
-            onClick={() => { setActiveTab('record'); stopCamera(); setResult(null); setError(''); }}
-          >
-            📷 Record In-App
-          </button>
-          <button
-            style={activeTab === 'upload' ? styles.tabActive : styles.tabInactive}
-            onClick={() => { setActiveTab('upload'); stopCamera(); setResult(null); setError(''); }}
-          >
-            📁 Upload File
-          </button>
+      {/* Navbar */}
+      <nav style={styles.navbar}>
+        <div style={styles.navLogo} onClick={() => { stopCamera(); navigate('/'); }}>
+          <div style={styles.navLogoIcon}>MT</div>
+          <span style={styles.navLogoText}>MediaTrust</span>
         </div>
+        <button style={styles.navBackBtn} onClick={() => { stopCamera(); navigate('/'); }}>← Back to Home</button>
+      </nav>
 
-        {/* Login Section */}
-        {!loggedIn ? (
-          <div>
-            <p style={styles.label}>Login to continue</p>
-            <input style={styles.input} type="email" placeholder="Email"
-              value={email} onChange={e => setEmail(e.target.value)} />
-            <input style={styles.input} type="password" placeholder="Password"
-              value={password} onChange={e => setPassword(e.target.value)} />
-            {error && <p style={styles.error}>{error}</p>}
-            <button style={styles.primaryBtn} onClick={handleLogin}>Login</button>
-            <p style={styles.registerText}>
-              Don't have an account?{' '}
-              <span style={styles.link} onClick={() => navigate('/register')}>Register</span>
-            </p>
+      <div style={styles.content}>
+        <div style={styles.formPanel}>
+          <div style={styles.headerBlock}>
+            <h2 style={styles.title}>Capture & Authenticate</h2>
+            <p style={styles.subtitle}>Record in-app or upload a file to generate a verified Claim ID.</p>
           </div>
-        ) : (
-          <div>
-            <p style={styles.success}>✅ Logged in successfully</p>
 
-            {/* RECORD IN-APP TAB */}
-            {activeTab === 'record' && (
-              <div>
-                {/* Mode Toggle */}
-                <div style={styles.modeRow}>
-                  <button
-                    style={cameraMode === 'video' ? styles.modeActive : styles.modeInactive}
-                    onClick={() => { setCameraMode('video'); stopCamera(); setCapturedMedia(null); }}
-                  >🎬 Video</button>
-                  <button
-                    style={cameraMode === 'photo' ? styles.modeActive : styles.modeInactive}
-                    onClick={() => { setCameraMode('photo'); stopCamera(); setCapturedMedia(null); }}
-                  >📸 Photo</button>
-                </div>
+          {/* Tab Switcher */}
+          <div style={styles.tabRow}>
+            <button
+              style={activeTab === 'record' ? styles.tabActive : styles.tabInactive}
+              onClick={() => { setActiveTab('record'); stopCamera(); setResult(null); setError(''); }}
+            >
+              Record In-App
+            </button>
+            <button
+              style={activeTab === 'upload' ? styles.tabActive : styles.tabInactive}
+              onClick={() => { setActiveTab('upload'); stopCamera(); setResult(null); setError(''); }}
+            >
+              Upload File
+            </button>
+          </div>
 
-                {/* Camera Preview */}
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  muted
-                  playsInline
-                  style={{
-                    ...styles.videoPreview,
-                    display: cameraActive ? 'block' : 'none'
-                  }}
-                />
+          {/* Login Section */}
+          {!loggedIn ? (
+            <div>
+              <div style={styles.fieldGroup}>
+                <label style={styles.label}>Email</label>
+                <input style={styles.input} type="email" placeholder="Your email"
+                  value={email} onChange={e => setEmail(e.target.value)} />
+              </div>
+              <div style={styles.fieldGroup}>
+                <label style={styles.label}>Password</label>
+                <input style={styles.input} type="password" placeholder="Your password"
+                  value={password} onChange={e => setPassword(e.target.value)} />
+              </div>
+              {error && <p style={styles.error}>{error}</p>}
+              <button style={styles.primaryBtn} onClick={handleLogin}>Login</button>
+              <p style={styles.registerText}>
+                Don't have an account?{' '}
+                <span style={styles.link} onClick={() => navigate('/register')}>Register</span>
+              </p>
+            </div>
+          ) : (
+            <div>
+              <p style={styles.success}>Logged in successfully</p>
 
-                {/* Captured Media Preview */}
-                {capturedMedia && !cameraActive && (
-                  <div style={styles.previewBox}>
-                    <p style={styles.label}>✅ Captured — Preview:</p>
-                    {capturedMedia.type === 'video' ? (
-                      <video src={capturedMedia.url} controls style={styles.videoPreview} />
-                    ) : (
-                      <img src={capturedMedia.url} alt="Captured" style={styles.videoPreview} />
-                    )}
+              {/* RECORD IN-APP TAB */}
+              {activeTab === 'record' && (
+                <div>
+                  <div style={styles.modeRow}>
+                    <button
+                      style={cameraMode === 'video' ? styles.modeActive : styles.modeInactive}
+                      onClick={() => { setCameraMode('video'); stopCamera(); setCapturedMedia(null); }}
+                    >Video</button>
+                    <button
+                      style={cameraMode === 'photo' ? styles.modeActive : styles.modeInactive}
+                      onClick={() => { setCameraMode('photo'); stopCamera(); setCapturedMedia(null); }}
+                    >Photo</button>
                   </div>
-                )}
 
-                {/* Camera Controls */}
-                {!cameraActive && !capturedMedia && (
-                  <button style={styles.primaryBtn} onClick={startCamera}>
-                    {cameraMode === 'video' ? '🎥 Start Camera' : '📷 Open Camera'}
-                  </button>
-                )}
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    muted
+                    playsInline
+                    style={{
+                      ...styles.videoPreview,
+                      display: cameraActive ? 'block' : 'none'
+                    }}
+                  />
 
-                {cameraActive && cameraMode === 'video' && !recording && (
-                  <button style={{ ...styles.primaryBtn, backgroundColor: '#ef4444' }} onClick={startRecording}>
-                    🔴 Start Recording
-                  </button>
-                )}
-
-                {cameraActive && cameraMode === 'video' && recording && (
-                  <button style={{ ...styles.primaryBtn, backgroundColor: '#f59e0b' }} onClick={stopRecording}>
-                    ⏹ Stop Recording
-                  </button>
-                )}
-
-                {cameraActive && cameraMode === 'photo' && (
-                  <button style={{ ...styles.primaryBtn, backgroundColor: '#10b981' }} onClick={capturePhoto}>
-                    📸 Capture Photo
-                  </button>
-                )}
-
-                {capturedMedia && (
-                  <button style={styles.secondaryBtn} onClick={() => { setCapturedMedia(null); setResult(null); }}>
-                    🔄 Retake
-                  </button>
-                )}
-
-                {/* Declaration + Upload */}
-                {capturedMedia && (
-                  <div>
-                    <div style={styles.declarationBox}>
-                      <input type="checkbox" id="declaration" checked={declaration}
-                        onChange={e => setDeclaration(e.target.checked)} />
-                      <label htmlFor="declaration" style={styles.declarationText}>
-                        I confirm this media is authentic and I am accountable for this submission.
-                      </label>
+                  {capturedMedia && !cameraActive && (
+                    <div style={styles.previewBox}>
+                      <p style={styles.label}>Captured — Preview</p>
+                      {capturedMedia.type === 'video' ? (
+                        <video src={capturedMedia.url} controls style={styles.videoPreview} />
+                      ) : (
+                        <img src={capturedMedia.url} alt="Captured" style={styles.videoPreview} />
+                      )}
                     </div>
-                    {error && <p style={styles.error}>{error}</p>}
-                    <button style={styles.primaryBtn} onClick={handleCapturedUpload} disabled={loading}>
-                      {loading ? 'Uploading...' : '🚀 Authenticate & Submit'}
+                  )}
+
+                  {!cameraActive && !capturedMedia && (
+                    <button style={styles.primaryBtn} onClick={startCamera}>
+                      {cameraMode === 'video' ? 'Start Camera' : 'Open Camera'}
                     </button>
-                  </div>
-                )}
-              </div>
-            )}
+                  )}
 
-            {/* UPLOAD FILE TAB */}
-            {activeTab === 'upload' && (
-              <div>
-                <p style={styles.label}>Select Video or Photo</p>
-                <input style={styles.fileInput} type="file" accept="video/*,image/*"
-                  onChange={e => setSelectedFile(e.target.files[0])} />
-                {selectedFile && <p style={styles.fileName}>📁 {selectedFile.name}</p>}
-                <div style={styles.declarationBox}>
-                  <input type="checkbox" id="declaration2" checked={declaration}
-                    onChange={e => setDeclaration(e.target.checked)} />
-                  <label htmlFor="declaration2" style={styles.declarationText}>
-                    I confirm this media is authentic and I am accountable for this submission.
-                  </label>
+                  {cameraActive && cameraMode === 'video' && !recording && (
+                    <button style={{ ...styles.primaryBtn, backgroundColor: '#ef4444', boxShadow: '0 4px 24px rgba(239,68,68,0.3)' }} onClick={startRecording}>
+                      Start Recording
+                    </button>
+                  )}
+
+                  {cameraActive && cameraMode === 'video' && recording && (
+                    <button style={{ ...styles.primaryBtn, backgroundColor: '#f59e0b', boxShadow: '0 4px 24px rgba(245,158,11,0.3)' }} onClick={stopRecording}>
+                      Stop Recording
+                    </button>
+                  )}
+
+                  {cameraActive && cameraMode === 'photo' && (
+                    <button style={{ ...styles.primaryBtn, backgroundColor: '#10b981', boxShadow: '0 4px 24px rgba(16,185,129,0.3)' }} onClick={capturePhoto}>
+                      Capture Photo
+                    </button>
+                  )}
+
+                  {capturedMedia && (
+                    <button style={styles.secondaryBtn} onClick={() => { setCapturedMedia(null); setResult(null); }}>
+                      Retake
+                    </button>
+                  )}
+
+                  {capturedMedia && (
+                    <div>
+                      <div style={styles.declarationBox}>
+                        <input type="checkbox" id="declaration" checked={declaration}
+                          onChange={e => setDeclaration(e.target.checked)} />
+                        <label htmlFor="declaration" style={styles.declarationText}>
+                          I confirm this media is authentic and I am accountable for this submission.
+                        </label>
+                      </div>
+                      {error && <p style={styles.error}>{error}</p>}
+                      <button style={styles.primaryBtn} onClick={handleCapturedUpload} disabled={loading}>
+                        {loading ? 'Uploading...' : 'Authenticate & Submit'}
+                      </button>
+                    </div>
+                  )}
                 </div>
-                {error && <p style={styles.error}>{error}</p>}
-                <button style={styles.primaryBtn} onClick={handleUpload} disabled={loading}>
-                  {loading ? 'Uploading...' : '🚀 Upload & Authenticate'}
-                </button>
-              </div>
-            )}
+              )}
 
-            {/* Result */}
-            {result && (
-              <div style={styles.resultBox}>
-                <h3 style={styles.resultTitle}>✅ Upload Successful</h3>
-                <p style={styles.resultText}>Claim ID: <strong>{result.claimId}</strong></p>
-                <p style={styles.resultText}>File Hash: <strong>{result.fileHash?.substring(0, 20)}...</strong></p>
-                <p style={styles.resultNote}>💾 Save your Claim ID to verify later!</p>
-              </div>
-            )}
-          </div>
-        )}
+              {/* UPLOAD FILE TAB */}
+              {activeTab === 'upload' && (
+                <div>
+                  <div style={styles.fieldGroup}>
+                    <label style={styles.label}>Select Video or Photo</label>
+                    <input style={styles.fileInput} type="file" accept="video/*,image/*"
+                      onChange={e => setSelectedFile(e.target.files[0])} />
+                    {selectedFile && <p style={styles.fileName}>{selectedFile.name}</p>}
+                  </div>
+                  <div style={styles.declarationBox}>
+                    <input type="checkbox" id="declaration2" checked={declaration}
+                      onChange={e => setDeclaration(e.target.checked)} />
+                    <label htmlFor="declaration2" style={styles.declarationText}>
+                      I confirm this media is authentic and I am accountable for this submission.
+                    </label>
+                  </div>
+                  {error && <p style={styles.error}>{error}</p>}
+                  <button style={styles.primaryBtn} onClick={handleUpload} disabled={loading}>
+                    {loading ? 'Uploading...' : 'Upload & Authenticate'}
+                  </button>
+                </div>
+              )}
+
+              {/* Result */}
+              {result && (
+                <div style={styles.resultBox}>
+                  <h3 style={styles.resultTitle}>Upload Successful</h3>
+                  <p style={styles.resultText}>Claim ID: <strong>{result.claimId}</strong></p>
+                  <p style={styles.resultText}>File Hash: <strong>{result.fileHash?.substring(0, 20)}...</strong></p>
+                  <p style={styles.resultNote}>Save your Claim ID to verify later.</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div style={styles.footer}>
+        <p style={styles.footerText}>
+          ST Joseph Engineering College &nbsp;·&nbsp; Dept. of CSE &nbsp;·&nbsp; VTU Belagavi &nbsp;·&nbsp; 2026-27
+        </p>
       </div>
     </div>
   );
@@ -393,48 +401,102 @@ function Record() {
 
 const styles = {
   container: {
+    minHeight: '100vh',
+    backgroundColor: '#070d1a',
+    fontFamily: "'Segoe UI', system-ui, sans-serif",
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  navbar: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '20px 60px',
+    borderBottom: '1px solid rgba(255,255,255,0.06)',
+  },
+  navLogo: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    cursor: 'pointer',
+  },
+  navLogoIcon: {
+    width: '36px',
+    height: '36px',
+    borderRadius: '8px',
+    background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: '0.85rem',
+  },
+  navLogoText: {
+    color: '#f1f5f9',
+    fontWeight: '700',
+    fontSize: '1.1rem',
+    letterSpacing: '-0.02em',
+  },
+  navBackBtn: {
+    backgroundColor: 'transparent',
+    color: '#94a3b8',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '8px',
+    padding: '8px 18px',
+    fontSize: '0.85rem',
+    cursor: 'pointer',
+  },
+  content: {
+    flex: 1,
     display: 'flex',
     justifyContent: 'center',
-    alignItems: 'center',
-    minHeight: '100vh',
-    backgroundColor: '#0f172a',
+    padding: '60px 40px',
   },
-  card: {
-    backgroundColor: '#1e293b',
-    borderRadius: '16px',
-    padding: '40px',
-    maxWidth: '540px',
-    width: '90%',
-    boxShadow: '0 25px 50px rgba(0,0,0,0.5)',
+  formPanel: {
+    width: '100%',
+    maxWidth: '480px',
+  },
+  headerBlock: {
+    marginBottom: '28px',
   },
   title: {
     color: '#f1f5f9',
-    fontSize: '1.8rem',
-    marginBottom: '16px',
+    fontSize: '2rem',
+    fontWeight: '800',
+    letterSpacing: '-0.02em',
+    margin: '0 0 8px 0',
+  },
+  subtitle: {
+    color: '#64748b',
+    fontSize: '0.9rem',
+    margin: 0,
   },
   tabRow: {
     display: 'flex',
     gap: '8px',
-    marginBottom: '20px',
+    marginBottom: '24px',
   },
   tabActive: {
     flex: 1,
-    padding: '10px',
+    padding: '11px',
     backgroundColor: '#3b82f6',
     color: 'white',
     border: 'none',
-    borderRadius: '8px',
+    borderRadius: '10px',
     cursor: 'pointer',
-    fontWeight: 'bold',
+    fontWeight: '600',
+    fontSize: '0.9rem',
   },
   tabInactive: {
     flex: 1,
-    padding: '10px',
-    backgroundColor: '#0f172a',
-    color: '#94a3b8',
-    border: '1px solid #334155',
-    borderRadius: '8px',
+    padding: '11px',
+    backgroundColor: 'transparent',
+    color: '#64748b',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '10px',
     cursor: 'pointer',
+    fontSize: '0.9rem',
   },
   modeRow: {
     display: 'flex',
@@ -443,146 +505,164 @@ const styles = {
   },
   modeActive: {
     flex: 1,
-    padding: '8px',
-    backgroundColor: '#7c3aed',
+    padding: '9px',
+    backgroundColor: '#8b5cf6',
     color: 'white',
     border: 'none',
     borderRadius: '8px',
     cursor: 'pointer',
-    fontWeight: 'bold',
+    fontWeight: '600',
+    fontSize: '0.85rem',
   },
   modeInactive: {
     flex: 1,
-    padding: '8px',
-    backgroundColor: '#0f172a',
-    color: '#94a3b8',
-    border: '1px solid #334155',
+    padding: '9px',
+    backgroundColor: 'transparent',
+    color: '#64748b',
+    border: '1px solid rgba(255,255,255,0.1)',
     borderRadius: '8px',
     cursor: 'pointer',
+    fontSize: '0.85rem',
   },
   videoPreview: {
     width: '100%',
-    borderRadius: '8px',
+    borderRadius: '10px',
     marginBottom: '12px',
     backgroundColor: '#000',
   },
   previewBox: {
     marginBottom: '12px',
   },
+  fieldGroup: {
+    marginBottom: '18px',
+  },
   label: {
+    display: 'block',
     color: '#94a3b8',
+    fontSize: '0.8rem',
+    fontWeight: '600',
     marginBottom: '8px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
   },
   input: {
     width: '100%',
-    padding: '12px',
-    marginBottom: '12px',
-    borderRadius: '8px',
-    border: '1px solid #334155',
-    backgroundColor: '#0f172a',
+    padding: '13px 14px',
+    borderRadius: '10px',
+    border: '1px solid rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(255,255,255,0.03)',
     color: '#f1f5f9',
-    fontSize: '1rem',
+    fontSize: '0.95rem',
     boxSizing: 'border-box',
+    outline: 'none',
   },
   fileInput: {
     width: '100%',
-    padding: '12px',
-    marginBottom: '12px',
-    borderRadius: '8px',
-    border: '1px solid #334155',
-    backgroundColor: '#0f172a',
+    padding: '12px 14px',
+    borderRadius: '10px',
+    border: '1px solid rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(255,255,255,0.03)',
     color: '#f1f5f9',
     boxSizing: 'border-box',
   },
   fileName: {
-    color: '#94a3b8',
-    fontSize: '0.9rem',
-    marginBottom: '12px',
+    color: '#64748b',
+    fontSize: '0.85rem',
+    marginTop: '8px',
   },
   primaryBtn: {
     width: '100%',
     backgroundColor: '#3b82f6',
     color: 'white',
     border: 'none',
-    borderRadius: '8px',
+    borderRadius: '10px',
     padding: '14px',
     fontSize: '1rem',
+    fontWeight: '600',
     cursor: 'pointer',
     marginTop: '12px',
+    boxShadow: '0 4px 24px rgba(59,130,246,0.3)',
   },
   secondaryBtn: {
     width: '100%',
     backgroundColor: 'transparent',
     color: '#94a3b8',
-    border: '1px solid #334155',
-    borderRadius: '8px',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '10px',
     padding: '12px',
-    fontSize: '1rem',
+    fontSize: '0.9rem',
     cursor: 'pointer',
     marginTop: '8px',
-  },
-  backBtn: {
-    backgroundColor: 'transparent',
-    color: '#94a3b8',
-    border: 'none',
-    cursor: 'pointer',
-    marginBottom: '16px',
-    fontSize: '0.9rem',
   },
   declarationBox: {
     display: 'flex',
     alignItems: 'flex-start',
     gap: '10px',
-    backgroundColor: '#0f172a',
-    padding: '12px',
-    borderRadius: '8px',
-    marginBottom: '12px',
-    marginTop: '12px',
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    padding: '14px',
+    borderRadius: '10px',
+    border: '1px solid rgba(255,255,255,0.06)',
+    marginBottom: '16px',
+    marginTop: '16px',
   },
   declarationText: {
     color: '#94a3b8',
-    fontSize: '0.9rem',
+    fontSize: '0.85rem',
     lineHeight: '1.5',
   },
   error: {
     color: '#ef4444',
-    fontSize: '0.9rem',
+    fontSize: '0.85rem',
     marginBottom: '8px',
   },
   success: {
     color: '#10b981',
-    marginBottom: '16px',
+    fontSize: '0.9rem',
+    marginBottom: '20px',
   },
   resultBox: {
-    backgroundColor: '#0f172a',
-    borderRadius: '8px',
-    padding: '16px',
-    marginTop: '16px',
-    border: '1px solid #10b981',
+    backgroundColor: 'rgba(16,185,129,0.06)',
+    borderRadius: '12px',
+    padding: '18px',
+    marginTop: '20px',
+    border: '1px solid rgba(16,185,129,0.3)',
   },
   resultTitle: {
     color: '#10b981',
-    marginBottom: '8px',
+    fontSize: '1rem',
+    fontWeight: '700',
+    margin: '0 0 10px 0',
   },
   resultText: {
     color: '#f1f5f9',
-    fontSize: '0.9rem',
+    fontSize: '0.88rem',
     marginBottom: '4px',
   },
   resultNote: {
     color: '#f59e0b',
-    fontSize: '0.85rem',
-    marginTop: '8px',
+    fontSize: '0.82rem',
+    marginTop: '10px',
   },
   registerText: {
-    color: '#94a3b8',
-    fontSize: '0.9rem',
-    marginTop: '12px',
+    color: '#64748b',
+    fontSize: '0.85rem',
+    marginTop: '16px',
     textAlign: 'center',
   },
   link: {
     color: '#3b82f6',
     cursor: 'pointer',
+    fontWeight: '600',
+  },
+  footer: {
+    textAlign: 'center',
+    padding: '24px 40px',
+    borderTop: '1px solid rgba(255,255,255,0.06)',
+  },
+  footerText: {
+    color: '#2d3f55',
+    fontSize: '0.75rem',
+    margin: '4px 0',
   },
 };
 
