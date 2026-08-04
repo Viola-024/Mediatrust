@@ -55,6 +55,14 @@ function Home() {
           >
             🔍 &nbsp; Verify Authenticity
           </button>
+          <button
+  style={styles.galleryBtn}
+  onClick={() => navigate('/gallery')}
+  onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)'}
+  onMouseLeave={e => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.04)'}
+>
+  📁 &nbsp; View Gallery
+</button>
         </div>
       </div>
 
@@ -493,6 +501,17 @@ const styles = {
     backgroundColor: 'rgba(255,255,255,0.08)',
     margin: '20px 0',
   },
+  galleryBtn: {
+  backgroundColor: 'rgba(255,255,255,0.04)',
+  color: '#e2e8f0',
+  border: '1px solid rgba(255,255,255,0.1)',
+  borderRadius: '10px',
+  padding: '14px 32px',
+  fontSize: '1rem',
+  cursor: 'pointer',
+  fontWeight: '600',
+  transition: 'background-color 0.2s',
+},
 };
 
 export default Home;

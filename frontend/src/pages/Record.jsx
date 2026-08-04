@@ -28,6 +28,9 @@ function Record() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const [showSavePopup, setShowSavePopup] = useState(false);
+  const [pendingMedia, setPendingMedia] = useState(null);
+
   useEffect(() => {
     return () => {
       if (streamRef.current) {
@@ -96,6 +99,7 @@ function Record() {
       const url = URL.createObjectURL(blob);
       setCapturedMedia({ blob, url, type: 'video' });
       setCapturedType('video');
+      setPendingMedia({ blob, url, type: 'video' });
     };
 
     mediaRecorder.start();
@@ -121,8 +125,63 @@ function Record() {
       const url = URL.createObjectURL(blob);
       setCapturedMedia({ blob, url, type: 'image' });
       setCapturedType('image');
+      setPendingMedia({ blob, url, type: 'image' });
       stopCamera();
     }, 'image/png');
+  };
+
+  const saveToGallery = (blob, type, claimId) => {
+    const url = URL.createObjectURL(blob);
+    const filename = type === 'video'
+      ? `MediaTrust_Video_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.webm`
+      : `MediaTrust_Photo_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.png`;
+
+    const item = {
+      url,
+      filename,
+      type,
+      date: new Date().toLocaleString(),
+      claimId: claimId || null,
+    };
+
+    const existing = JSON.parse(localStorage.getItem('mediatrust_gallery') || '[]');
+    existing.unshift(item);
+    localStorage.setItem('mediatrust_gallery', JSON.stringify(existing));
+  };
+
+  const handleSaveToDevice = () => {
+    if (!pendingMedia) return;
+    const filename = pendingMedia.type === 'video'
+      ? `MediaTrust_Video_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.webm`
+      : `MediaTrust_Photo_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.png`;
+    const a = document.createElement('a');
+    a.href = pendingMedia.url;
+    a.download = filename;
+    a.click();
+    setShowSavePopup(false);
+    setPendingMedia(null);
+  };
+
+  const handleSaveToGallery = () => {
+    if (!pendingMedia) return;
+    saveToGallery(pendingMedia.blob, pendingMedia.type, result?.claimId);
+    setShowSavePopup(false);
+    setPendingMedia(null);
+    alert('✅ Saved to MediaTrust Gallery!');
+  };
+
+  const handleSaveBoth = () => {
+    if (!pendingMedia) return;
+    const filename = pendingMedia.type === 'video'
+      ? `MediaTrust_Video_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.webm`
+      : `MediaTrust_Photo_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.png`;
+    const a = document.createElement('a');
+    a.href = pendingMedia.url;
+    a.download = filename;
+    a.click();
+    saveToGallery(pendingMedia.blob, pendingMedia.type, result?.claimId);
+    setShowSavePopup(false);
+    setPendingMedia(null);
   };
 
   const handleCapturedUpload = async () => {
@@ -167,6 +226,10 @@ function Record() {
       });
 
       setResult(res.data);
+
+      // Show popup AFTER successful upload
+      setShowSavePopup(true);
+
     } catch (err) {
       setError('Upload failed. Please try again.');
     } finally {
@@ -213,6 +276,37 @@ function Record() {
 
   return (
     <div style={styles.container}>
+
+      {/* Save Popup — fixed overlay outside everything */}
+      {showSavePopup && (
+        <div style={styles.popupOverlay}>
+          <div style={styles.popup}>
+            <div style={styles.popupIcon}>
+              {pendingMedia?.type === 'video' ? '🎬' : '📸'}
+            </div>
+            <h3 style={styles.popupTitle}>
+              {pendingMedia?.type === 'video' ? 'Video Authenticated!' : 'Photo Authenticated!'}
+            </h3>
+            <p style={styles.popupClaimId}>
+              🔖 Claim ID: <strong>{result?.claimId}</strong>
+            </p>
+            <p style={styles.popupSubtitle}>Where would you like to save your media?</p>
+            <button style={styles.popupBtnPrimary} onClick={handleSaveToDevice}>
+              💾 Save to Device
+            </button>
+            <button style={styles.popupBtnSecondary} onClick={handleSaveToGallery}>
+              📁 Save to App Gallery
+            </button>
+            <button style={styles.popupBtnBoth} onClick={handleSaveBoth}>
+              ✅ Save to Both
+            </button>
+            <button style={styles.popupBtnSkip} onClick={() => { setShowSavePopup(false); setPendingMedia(null); }}>
+              Skip
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Navbar */}
       <nav style={styles.navbar}>
         <div style={styles.navLogo} onClick={() => { stopCamera(); navigate('/'); }}>
@@ -267,7 +361,7 @@ function Record() {
             </div>
           ) : (
             <div>
-              <p style={styles.success}>Logged in successfully</p>
+              <p style={styles.success}>✅ Logged in successfully</p>
 
               {/* RECORD IN-APP TAB */}
               {activeTab === 'record' && (
@@ -330,7 +424,7 @@ function Record() {
                   )}
 
                   {capturedMedia && (
-                    <button style={styles.secondaryBtn} onClick={() => { setCapturedMedia(null); setResult(null); }}>
+                    <button style={styles.secondaryBtn} onClick={() => { setCapturedMedia(null); setResult(null); setPendingMedia(null); }}>
                       Retake
                     </button>
                   )}
@@ -379,10 +473,10 @@ function Record() {
               {/* Result */}
               {result && (
                 <div style={styles.resultBox}>
-                  <h3 style={styles.resultTitle}>Upload Successful</h3>
+                  <h3 style={styles.resultTitle}>✅ Upload Successful</h3>
                   <p style={styles.resultText}>Claim ID: <strong>{result.claimId}</strong></p>
                   <p style={styles.resultText}>File Hash: <strong>{result.fileHash?.substring(0, 20)}...</strong></p>
-                  <p style={styles.resultNote}>Save your Claim ID to verify later.</p>
+                  <p style={styles.resultNote}>💾 Save your Claim ID to verify later.</p>
                 </div>
               )}
             </div>
@@ -406,6 +500,104 @@ const styles = {
     fontFamily: "'Segoe UI', system-ui, sans-serif",
     display: 'flex',
     flexDirection: 'column',
+  },
+  popupOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    width: '100vw',
+    height: '100vh',
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 9999,
+    backdropFilter: 'blur(6px)',
+  },
+  popup: {
+    backgroundColor: '#1e293b',
+    borderRadius: '20px',
+    padding: '40px 32px',
+    maxWidth: '380px',
+    width: '90%',
+    border: '1px solid rgba(59,130,246,0.25)',
+    boxShadow: '0 0 60px rgba(59,130,246,0.15), 0 25px 50px rgba(0,0,0,0.6)',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '12px',
+  },
+  popupIcon: {
+    fontSize: '3.5rem',
+  },
+  popupTitle: {
+    color: '#f1f5f9',
+    fontSize: '1.4rem',
+    fontWeight: '700',
+    margin: 0,
+    textAlign: 'center',
+  },
+  popupClaimId: {
+    color: '#3b82f6',
+    fontSize: '0.9rem',
+    margin: 0,
+    textAlign: 'center',
+    backgroundColor: 'rgba(59,130,246,0.1)',
+    padding: '8px 16px',
+    borderRadius: '8px',
+    border: '1px solid rgba(59,130,246,0.2)',
+    width: '100%',
+    boxSizing: 'border-box',
+  },
+  popupSubtitle: {
+    color: '#64748b',
+    fontSize: '0.88rem',
+    margin: '0 0 4px 0',
+    textAlign: 'center',
+  },
+  popupBtnPrimary: {
+    width: '100%',
+    backgroundColor: '#3b82f6',
+    color: 'white',
+    border: 'none',
+    borderRadius: '10px',
+    padding: '13px',
+    fontSize: '0.95rem',
+    cursor: 'pointer',
+    fontWeight: '600',
+    boxShadow: '0 4px 16px rgba(59,130,246,0.3)',
+  },
+  popupBtnSecondary: {
+    width: '100%',
+    backgroundColor: '#7c3aed',
+    color: 'white',
+    border: 'none',
+    borderRadius: '10px',
+    padding: '13px',
+    fontSize: '0.95rem',
+    cursor: 'pointer',
+    fontWeight: '600',
+    boxShadow: '0 4px 16px rgba(124,58,237,0.3)',
+  },
+  popupBtnBoth: {
+    width: '100%',
+    backgroundColor: '#059669',
+    color: 'white',
+    border: 'none',
+    borderRadius: '10px',
+    padding: '13px',
+    fontSize: '0.95rem',
+    cursor: 'pointer',
+    fontWeight: '600',
+    boxShadow: '0 4px 16px rgba(5,150,105,0.3)',
+  },
+  popupBtnSkip: {
+    backgroundColor: 'transparent',
+    color: '#475569',
+    border: 'none',
+    cursor: 'pointer',
+    fontSize: '0.85rem',
+    marginTop: '4px',
   },
   navbar: {
     display: 'flex',

@@ -4,6 +4,7 @@ import Home from './pages/Home';
 import Record from './pages/Record';
 import Verify from './pages/Verify';
 import Register from './pages/Register';
+import Gallery from './pages/Gallery';
 import './App.css';
 
 function App() {
@@ -14,6 +15,7 @@ function App() {
         <Route path="/record" element={<Record />} />
         <Route path="/verify" element={<Verify />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/gallery" element={<Gallery />} />
       </Routes>
     </Router>
   );
