@@ -1,12 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const { generateHash, verifyHashChain } = require('../utils/hashChain');
+const fs = require('fs');
+const path = require('path');
+const axios = require('axios');
+const FormData = require('form-data');
+const { generateHash } = require('../utils/hashChain');
 const MediaRecord = require('../models/MediaRecord');
 
 const upload = multer({ dest: 'temp/' });
 
-// Verify media route
 router.post('/', upload.single('media'), async (req, res) => {
   try {
     const file = req.file;
@@ -19,32 +22,142 @@ router.post('/', upload.single('media'), async (req, res) => {
     const record = await MediaRecord.findOne({ claimId });
     if (!record) return res.status(404).json({ message: 'Claim ID not found' });
 
-    // Recompute hash
-    const fs = require('fs');
-    const fileBuffer = fs.readFileSync(file.path);
-    const newHash = generateHash(fileBuffer.toString('base64'));
+    const isVideo = record.mediaType === 'video';
 
-    // Compare hashes
-    const hashMatch = newHash === record.finalHash;
+    // Path to originally stored file
+    const originalFilePath = path.join(__dirname, '..', 'uploads', record.fileName);
+    const originalExists = fs.existsSync(originalFilePath);
+
+    let verificationResult = null;
+
+    try {
+      const formData = new FormData();
+
+      if (isVideo) {
+        // Use re-uploaded file for video verification
+        formData.append('media', fs.createReadStream(file.path), file.originalname || 'video.webm');
+        formData.append('storedHashes', JSON.stringify(record.frameHashes));
+
+        const response = await axios.post(
+          'http://127.0.0.1:5001/verify-frames',
+          formData,
+          { headers: formData.getHeaders(), timeout: 60000 }
+        );
+
+        verificationResult = response.data;
+        console.log(`Video verified: ${verificationResult.tampered_count} frames tampered out of ${verificationResult.total_frames}`);
+
+      } else {
+        // For images — use the ORIGINAL stored file for re-hashing
+        // and compare with stored block hashes
+        const imageToVerify = originalExists ? originalFilePath : file.path;
+
+        formData.append(
+          'media',
+          fs.createReadStream(imageToVerify),
+          record.fileName
+        );
+        formData.append('storedBlockHashes', JSON.stringify(record.frameHashes));
+        formData.append('storedOverallHash', record.finalHash);
+
+        const response = await axios.post(
+          'http://127.0.0.1:5001/verify-image',
+          formData,
+          { headers: formData.getHeaders(), timeout: 30000 }
+        );
+
+        verificationResult = response.data;
+
+        // Now also check uploaded file against original
+        // to detect if user uploaded a different/tampered file
+        if (originalExists) {
+          const uploadedBuffer = fs.readFileSync(file.path);
+          const originalBuffer = fs.readFileSync(originalFilePath);
+          const uploadedHash = generateHash(uploadedBuffer.toString('base64'));
+          const originalHash = generateHash(originalBuffer.toString('base64'));
+
+          if (uploadedHash !== originalHash) {
+            // File was modified after original upload
+            verificationResult.verdict = 'TAMPERED';
+            verificationResult.tampered_count = verificationResult.tampered_count || 1;
+            verificationResult.tamper_percentage = verificationResult.tamper_percentage || 100;
+            console.log('File hash mismatch — file was modified after upload');
+          } else {
+            verificationResult.verdict = 'AUTHENTIC';
+            verificationResult.tampered_count = 0;
+            verificationResult.tamper_percentage = 0;
+            console.log('File hash match — file is authentic');
+          }
+        }
+
+        console.log(`Image verified: ${verificationResult.tampered_count} blocks tampered`);
+      }
+
+    } catch (pythonError) {
+      console.error('Python verification error — falling back:', pythonError.message);
+
+      // Fallback — direct file comparison
+      if (originalExists) {
+        const uploadedBuffer = fs.readFileSync(file.path);
+        const originalBuffer = fs.readFileSync(originalFilePath);
+        const uploadedHash = generateHash(uploadedBuffer.toString('base64'));
+        const originalHash = generateHash(originalBuffer.toString('base64'));
+        const hashMatch = uploadedHash === originalHash;
+
+        verificationResult = {
+          verdict: hashMatch ? 'AUTHENTIC' : 'TAMPERED',
+          tampered_count: hashMatch ? 0 : 1,
+          intact_count: hashMatch ? 1 : 0,
+          total_frames: 1,
+          tampered_frames: [],
+          tampered_blocks: [],
+          tamper_percentage: hashMatch ? 0 : 100
+        };
+      } else {
+        const fileBuffer = fs.readFileSync(file.path);
+        const newHash = generateHash(fileBuffer.toString('base64'));
+        const hashMatch = newHash === record.finalHash;
+
+        verificationResult = {
+          verdict: hashMatch ? 'AUTHENTIC' : 'TAMPERED',
+          tampered_count: hashMatch ? 0 : 1,
+          intact_count: hashMatch ? 1 : 0,
+          total_frames: 1,
+          tampered_frames: [],
+          tampered_blocks: [],
+          tamper_percentage: hashMatch ? 0 : 100
+        };
+      }
+    }
 
     // Clean up temp file
     fs.unlinkSync(file.path);
 
-    // Build report
+    const isAuthentic = verificationResult.verdict === 'AUTHENTIC';
+
     const report = {
       claimId: record.claimId,
-      hashChainIntegrity: hashMatch ? 'VALID' : 'BROKEN',
+      mediaType: record.mediaType,
+      hashChainIntegrity: isAuthentic ? 'VALID' : 'BROKEN',
       watermarkStatus: record.watermarkData ? 'PRESENT' : 'MISSING',
-      metadataMatch: hashMatch ? 'VERIFIED' : 'MISMATCH',
+      metadataMatch: isAuthentic ? 'VERIFIED' : 'MISMATCH',
       originalUploader: record.userId,
       location: record.gpsLocation,
       timestamp: record.timestamp,
-      verdict: hashMatch ? 'AUTHENTIC MEDIA' : 'MEDIA TAMPERED'
+      verdict: isAuthentic ? 'AUTHENTIC MEDIA' : 'MEDIA TAMPERED',
+      totalFrames: verificationResult.total_frames,
+      tamperedCount: verificationResult.tampered_count,
+      intactCount: verificationResult.intact_count,
+      tamperPercentage: verificationResult.tamper_percentage,
+      firstTamperedFrame: verificationResult.first_tampered_frame || null,
+      tamperedFrames: verificationResult.tampered_frames || [],
+      tamperedBlocks: verificationResult.tampered_blocks || [],
     };
 
     res.json(report);
 
   } catch (err) {
+    console.error('Verify error:', err);
     res.status(500).json({ message: 'Server error', error: err.message });
   }
 });

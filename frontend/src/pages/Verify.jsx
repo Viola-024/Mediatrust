@@ -51,15 +51,17 @@ function Verify() {
           <div style={styles.navLogoIcon}>MT</div>
           <span style={styles.navLogoText}>MediaTrust</span>
         </div>
-        <button style={styles.navBackBtn} onClick={() => navigate('/')}>← Back to Home</button>
+        <button style={styles.navBackBtn} onClick={() => navigate('/')}>
+          ← Back to Home
+        </button>
       </nav>
 
       <div style={styles.content}>
         <div style={styles.formPanel}>
           <div style={styles.headerBlock}>
-            <h2 style={styles.title}>Verify Media Authenticity</h2>
+            <h2 style={styles.title}>Verify Media</h2>
             <p style={styles.subtitle}>
-              Upload a file and enter its Claim ID to check for tampering.
+              Upload a file and enter its Claim ID to run a full forensic analysis.
             </p>
           </div>
 
@@ -83,7 +85,7 @@ function Verify() {
               onChange={e => setSelectedFile(e.target.files[0])}
             />
             {selectedFile && (
-              <p style={styles.fileName}>{selectedFile.name}</p>
+              <p style={styles.fileName}>📁 {selectedFile.name}</p>
             )}
           </div>
 
@@ -93,35 +95,46 @@ function Verify() {
             style={styles.primaryBtn}
             onClick={handleVerify}
             disabled={loading}
-            onMouseEnter={e => e.currentTarget.style.opacity = '0.9'}
-            onMouseLeave={e => e.currentTarget.style.opacity = '1'}
           >
-            {loading ? 'Verifying...' : 'Verify Authenticity'}
+            {loading ? '⏳ Analysing...' : '🔍 Run Forensic Analysis'}
           </button>
 
+          {/* Result */}
           {result && (
-            <div style={styles.resultBox}>
+            <div style={{
+              ...styles.resultBox,
+              borderColor: isAuthentic ? '#10b981' : '#ef4444'
+            }}>
               {/* Verdict Banner */}
               <div style={{
                 ...styles.verdictBanner,
-                backgroundColor: isAuthentic ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)',
-                borderColor: isAuthentic ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)',
+                backgroundColor: isAuthentic ? '#064e3b' : '#450a0a'
               }}>
+                <span style={styles.verdictIcon}>
+                  {isAuthentic ? '✅' : '❌'}
+                </span>
                 <span style={{
                   ...styles.verdictText,
-                  color: isAuthentic ? '#10b981' : '#ef4444',
+                  color: isAuthentic ? '#10b981' : '#ef4444'
                 }}>
                   {isAuthentic ? 'AUTHENTIC MEDIA' : 'MEDIA TAMPERED'}
                 </span>
               </div>
 
-              {/* Report Rows */}
+              {/* Basic Report */}
               <div style={styles.reportSection}>
-                <p style={styles.reportHeading}>Authenticity Report</p>
+                <p style={styles.reportHeading}>📋 Forensic Report</p>
 
                 <div style={styles.reportRow}>
                   <span style={styles.reportLabel}>Claim ID</span>
                   <span style={styles.reportValue}>{result.claimId}</span>
+                </div>
+
+                <div style={styles.reportRow}>
+                  <span style={styles.reportLabel}>Media Type</span>
+                  <span style={styles.reportValue}>
+                    {result.mediaType === 'video' ? '🎬 Video' : '📸 Image'}
+                  </span>
                 </div>
 
                 <div style={styles.reportRow}>
@@ -130,7 +143,7 @@ function Verify() {
                     ...styles.reportValue,
                     color: result.hashChainIntegrity === 'VALID' ? '#10b981' : '#ef4444'
                   }}>
-                    {result.hashChainIntegrity === 'VALID' ? 'VALID' : 'BROKEN'}
+                    {result.hashChainIntegrity === 'VALID' ? '✅ VALID' : '❌ BROKEN'}
                   </span>
                 </div>
 
@@ -140,7 +153,7 @@ function Verify() {
                     ...styles.reportValue,
                     color: result.watermarkStatus === 'PRESENT' ? '#10b981' : '#f59e0b'
                   }}>
-                    {result.watermarkStatus === 'PRESENT' ? 'PRESENT' : 'MISSING'}
+                    {result.watermarkStatus === 'PRESENT' ? '✅ PRESENT' : '⚠️ MISSING'}
                   </span>
                 </div>
 
@@ -150,14 +163,7 @@ function Verify() {
                     ...styles.reportValue,
                     color: result.metadataMatch === 'VERIFIED' ? '#10b981' : '#ef4444'
                   }}>
-                    {result.metadataMatch === 'VERIFIED' ? 'VERIFIED' : 'MISMATCH'}
-                  </span>
-                </div>
-
-                <div style={styles.reportRow}>
-                  <span style={styles.reportLabel}>Uploader ID</span>
-                  <span style={styles.reportValue}>
-                    {result.originalUploader?.toString().substring(0, 16)}...
+                    {result.metadataMatch === 'VERIFIED' ? '✅ VERIFIED' : '❌ MISMATCH'}
                   </span>
                 </div>
 
@@ -168,7 +174,7 @@ function Verify() {
                   </span>
                 </div>
 
-                <div style={{ ...styles.reportRow, borderBottom: 'none', marginBottom: 0, paddingBottom: 0 }}>
+                <div style={styles.reportRow}>
                   <span style={styles.reportLabel}>Location</span>
                   <span style={styles.reportValue}>
                     {result.location?.latitude}, {result.location?.longitude}
@@ -176,13 +182,127 @@ function Verify() {
                 </div>
               </div>
 
+              {/* Frame Analysis Section */}
+              <div style={styles.frameSection}>
+                <p style={styles.reportHeading}>
+                  🔬 {result.mediaType === 'video' ? 'Frame' : 'Block'} Analysis
+                </p>
+
+                <div style={styles.statsRow}>
+                  <div style={styles.statBox}>
+                    <span style={styles.statNumber}>{result.totalFrames}</span>
+                    <span style={styles.statLabel}>
+                      Total {result.mediaType === 'video' ? 'Frames' : 'Blocks'}
+                    </span>
+                  </div>
+                  <div style={styles.statBox}>
+                    <span style={{
+                      ...styles.statNumber,
+                      color: '#10b981'
+                    }}>
+                      {result.intactCount}
+                    </span>
+                    <span style={styles.statLabel}>Intact</span>
+                  </div>
+                  <div style={styles.statBox}>
+                    <span style={{
+                      ...styles.statNumber,
+                      color: result.tamperedCount > 0 ? '#ef4444' : '#10b981'
+                    }}>
+                      {result.tamperedCount}
+                    </span>
+                    <span style={styles.statLabel}>Tampered</span>
+                  </div>
+                  <div style={styles.statBox}>
+                    <span style={{
+                      ...styles.statNumber,
+                      color: result.tamperPercentage > 0 ? '#ef4444' : '#10b981'
+                    }}>
+                      {result.tamperPercentage}%
+                    </span>
+                    <span style={styles.statLabel}>Tampered</span>
+                  </div>
+                </div>
+
+                {/* Tamper Timeline for Video */}
+                {result.mediaType === 'video' && result.totalFrames > 0 && (
+                  <div style={styles.timelineSection}>
+                    <p style={styles.timelineLabel}>
+                      Frame Timeline
+                    </p>
+                    <div style={styles.timeline}>
+                      {Array.from({ length: Math.min(result.totalFrames, 100) }).map((_, i) => {
+                        const frameIndex = Math.floor(i * result.totalFrames / Math.min(result.totalFrames, 100));
+                        const isTampered = result.tamperedFrames?.some(
+                          f => f.frame_index === frameIndex
+                        );
+                        return (
+                          <div
+                            key={i}
+                            title={`Frame ${frameIndex}: ${isTampered ? 'TAMPERED' : 'INTACT'}`}
+                            style={{
+                              ...styles.timelineBlock,
+                              backgroundColor: isTampered ? '#ef4444' : '#10b981',
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+                    <div style={styles.timelineLegend}>
+                      <span style={styles.legendItem}>
+                        <span style={{ ...styles.legendDot, backgroundColor: '#10b981' }} />
+                        Intact
+                      </span>
+                      <span style={styles.legendItem}>
+                        <span style={{ ...styles.legendDot, backgroundColor: '#ef4444' }} />
+                        Tampered
+                      </span>
+                    </div>
+                    {result.firstTamperedFrame !== null && (
+                      <p style={styles.tamperedNote}>
+                        ⚠️ First tampered frame detected at frame {result.firstTamperedFrame}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Tampered blocks list */}
+                {result.tamperedCount > 0 && (
+                  <div style={styles.tamperedList}>
+                    <p style={styles.tamperedListTitle}>
+                      ⚠️ Tampered {result.mediaType === 'video' ? 'Frames' : 'Regions'}:
+                    </p>
+                    <div style={styles.tamperedScroll}>
+                      {(result.tamperedFrames?.length > 0
+                        ? result.tamperedFrames
+                        : result.tamperedBlocks
+                      )?.slice(0, 10).map((item, i) => (
+                        <div key={i} style={styles.tamperedItem}>
+                          {result.mediaType === 'video'
+                            ? `Frame ${item.frame_index}`
+                            : `Region at row ${item.row}, col ${item.col}`
+                          }
+                        </div>
+                      ))}
+                      {result.tamperedCount > 10 && (
+                        <p style={styles.moreText}>
+                          ... and {result.tamperedCount - 10} more
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Final Note */}
               <p style={{
                 ...styles.finalNote,
                 color: isAuthentic ? '#10b981' : '#ef4444'
               }}>
                 {isAuthentic
-                  ? 'This media has not been tampered with since submission.'
-                  : 'This media has been modified after submission.'}
+                  ? '🛡️ All frames verified. This media has not been tampered with since submission.'
+                  : `⚠️ ${result.tamperedCount} ${result.mediaType === 'video' ? 'frame(s)' : 'region(s)'} were modified after submission.`
+                }
               </p>
             </div>
           )}
@@ -235,7 +355,6 @@ const styles = {
     color: '#f1f5f9',
     fontWeight: '700',
     fontSize: '1.1rem',
-    letterSpacing: '-0.02em',
   },
   navBackBtn: {
     backgroundColor: 'transparent',
@@ -254,26 +373,24 @@ const styles = {
   },
   formPanel: {
     width: '100%',
-    maxWidth: '480px',
+    maxWidth: '560px',
   },
   headerBlock: {
-    marginBottom: '32px',
+    marginBottom: '28px',
   },
   title: {
     color: '#f1f5f9',
     fontSize: '2rem',
     fontWeight: '800',
-    letterSpacing: '-0.02em',
     margin: '0 0 8px 0',
   },
   subtitle: {
     color: '#64748b',
     fontSize: '0.9rem',
     margin: 0,
-    lineHeight: '1.6',
   },
   fieldGroup: {
-    marginBottom: '20px',
+    marginBottom: '18px',
   },
   label: {
     display: 'block',
@@ -311,7 +428,7 @@ const styles = {
   },
   primaryBtn: {
     width: '100%',
-    backgroundColor: '#10b981',
+    backgroundColor: '#3b82f6',
     color: 'white',
     border: 'none',
     borderRadius: '10px',
@@ -319,32 +436,38 @@ const styles = {
     fontSize: '1rem',
     fontWeight: '600',
     cursor: 'pointer',
-    marginTop: '8px',
-    boxShadow: '0 4px 24px rgba(16,185,129,0.3)',
-    transition: 'opacity 0.2s',
+    marginTop: '12px',
+    boxShadow: '0 4px 24px rgba(59,130,246,0.3)',
   },
   error: {
     color: '#ef4444',
     fontSize: '0.85rem',
-    marginBottom: '12px',
+    marginBottom: '8px',
   },
   resultBox: {
     borderRadius: '12px',
-    marginTop: '28px',
-    border: '1px solid rgba(255,255,255,0.08)',
+    marginTop: '24px',
+    border: '2px solid',
     overflow: 'hidden',
   },
   verdictBanner: {
-    padding: '18px',
+    padding: '24px',
     textAlign: 'center',
-    borderBottom: '1px solid',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '12px',
+  },
+  verdictIcon: {
+    fontSize: '2rem',
   },
   verdictText: {
-    fontSize: '1.2rem',
-    fontWeight: '800',
+    fontSize: '1.5rem',
+    fontWeight: 'bold',
     letterSpacing: '0.05em',
   },
   reportSection: {
+    backgroundColor: '#0f172a',
     padding: '20px',
   },
   reportHeading: {
@@ -353,14 +476,13 @@ const styles = {
     marginBottom: '14px',
     textTransform: 'uppercase',
     letterSpacing: '0.1em',
-    fontWeight: '600',
   },
   reportRow: {
     display: 'flex',
     justifyContent: 'space-between',
     marginBottom: '10px',
     paddingBottom: '10px',
-    borderBottom: '1px solid rgba(255,255,255,0.06)',
+    borderBottom: '1px solid rgba(255,255,255,0.04)',
   },
   reportLabel: {
     color: '#64748b',
@@ -369,15 +491,118 @@ const styles = {
   reportValue: {
     color: '#f1f5f9',
     fontSize: '0.85rem',
-    fontWeight: '600',
+    fontWeight: 'bold',
     textAlign: 'right',
     maxWidth: '60%',
+  },
+  frameSection: {
+    backgroundColor: '#080f1f',
+    padding: '20px',
+    borderTop: '1px solid rgba(255,255,255,0.06)',
+  },
+  statsRow: {
+    display: 'flex',
+    gap: '12px',
+    marginBottom: '20px',
+  },
+  statBox: {
+    flex: 1,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(255,255,255,0.06)',
+    borderRadius: '10px',
+    padding: '12px',
+    textAlign: 'center',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+  },
+  statNumber: {
+    color: '#f1f5f9',
+    fontSize: '1.3rem',
+    fontWeight: '800',
+  },
+  statLabel: {
+    color: '#475569',
+    fontSize: '0.7rem',
+  },
+  timelineSection: {
+    marginBottom: '16px',
+  },
+  timelineLabel: {
+    color: '#64748b',
+    fontSize: '0.78rem',
+    marginBottom: '8px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+  },
+  timeline: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '2px',
+    marginBottom: '8px',
+  },
+  timelineBlock: {
+    width: '8px',
+    height: '20px',
+    borderRadius: '2px',
+  },
+  timelineLegend: {
+    display: 'flex',
+    gap: '16px',
+    marginBottom: '8px',
+  },
+  legendItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    color: '#64748b',
+    fontSize: '0.75rem',
+  },
+  legendDot: {
+    width: '10px',
+    height: '10px',
+    borderRadius: '2px',
+  },
+  tamperedNote: {
+    color: '#f59e0b',
+    fontSize: '0.82rem',
+    margin: '8px 0 0 0',
+  },
+  tamperedList: {
+    marginTop: '12px',
+  },
+  tamperedListTitle: {
+    color: '#ef4444',
+    fontSize: '0.85rem',
+    fontWeight: '600',
+    marginBottom: '8px',
+  },
+  tamperedScroll: {
+    maxHeight: '120px',
+    overflowY: 'auto',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+  },
+  tamperedItem: {
+    backgroundColor: 'rgba(239,68,68,0.1)',
+    border: '1px solid rgba(239,68,68,0.2)',
+    borderRadius: '6px',
+    padding: '6px 10px',
+    color: '#fca5a5',
+    fontSize: '0.8rem',
+  },
+  moreText: {
+    color: '#64748b',
+    fontSize: '0.8rem',
+    margin: '4px 0 0 0',
   },
   finalNote: {
     padding: '14px 20px',
     fontSize: '0.85rem',
     textAlign: 'center',
-    borderTop: '1px solid rgba(255,255,255,0.06)',
+    backgroundColor: '#0f172a',
+    margin: 0,
   },
   footer: {
     textAlign: 'center',
