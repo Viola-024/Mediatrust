@@ -1,5 +1,14 @@
 const mongoose = require('mongoose');
 
+const frameHashSchema = new mongoose.Schema({
+  frame_index: Number,
+  hash: String,
+  row: Number,
+  col: Number,
+  width: Number,
+  height: Number
+}, { _id: false });
+
 const mediaRecordSchema = new mongoose.Schema({
   claimId: {
     type: String,
@@ -17,6 +26,8 @@ const mediaRecordSchema = new mongoose.Schema({
     enum: ['video', 'image']
   },
   hashChain: [String],
+  frameHashes: [frameHashSchema],
+  totalFrames: Number,
   finalHash: String,
   timestamp: {
     type: Date,

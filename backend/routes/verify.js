@@ -34,9 +34,15 @@ router.post('/', upload.single('media'), async (req, res) => {
       const formData = new FormData();
 
       if (isVideo) {
-        // Use re-uploaded file for video verification
+        console.log('frameHashes length:', record.frameHashes?.length);
+        console.log('frameHashes type:', typeof record.frameHashes);
+        console.log('sample:', JSON.stringify(record.frameHashes?.[0]));
+
+        const hashesString = JSON.stringify(record.frameHashes || []);
+        console.log('hashesString length:', hashesString.length);
+
         formData.append('media', fs.createReadStream(file.path), file.originalname || 'video.webm');
-        formData.append('storedHashes', JSON.stringify(record.frameHashes));
+        formData.append('storedHashes', hashesString);
 
         const response = await axios.post(
           'http://127.0.0.1:5001/verify-frames',
@@ -46,7 +52,6 @@ router.post('/', upload.single('media'), async (req, res) => {
 
         verificationResult = response.data;
         console.log(`Video verified: ${verificationResult.tampered_count} frames tampered out of ${verificationResult.total_frames}`);
-
       } else {
         // For images — use the ORIGINAL stored file for re-hashing
         // and compare with stored block hashes

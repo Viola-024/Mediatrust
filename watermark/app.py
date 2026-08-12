@@ -65,44 +65,44 @@ def extract():
         return jsonify({'error': str(e)}), 500
 
 
+# ─── Helper to save uploaded file ─────────────────────────────────────────────
+
+def save_upload(file, suffix):
+    """Save uploaded file to disk and return path. Windows-safe."""
+    tmp_path = os.path.join(UPLOAD_FOLDER, f"tmp_{os.urandom(8).hex()}{suffix}")
+    file.save(tmp_path)
+    return tmp_path
+
+
 # ─── Frame hashing routes ─────────────────────────────────────────────────────
 
 @app.route('/hash-frames', methods=['POST'])
 def hash_frames():
-    """
-    Receives a video file.
-    Extracts every frame and returns full hash chain.
-    """
+    tmp_path = None
     try:
         file = request.files.get('media')
         if not file:
             return jsonify({'error': 'No file provided'}), 400
 
         suffix = os.path.splitext(file.filename)[1] or '.webm'
-        with tempfile.NamedTemporaryFile(
-            delete=False,
-            suffix=suffix,
-            dir=UPLOAD_FOLDER
-        ) as tmp:
-            file.save(tmp.name)
-            tmp_path = tmp.name
+        tmp_path = save_upload(file, suffix)
 
         result = extract_and_hash_frames(tmp_path)
-
-        os.unlink(tmp_path)
 
         return jsonify(result)
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
 
 @app.route('/verify-frames', methods=['POST'])
 def verify_frames():
-    """
-    Receives a video file + stored hash chain.
-    Returns frame-level tamper report.
-    """
+    tmp_path = None
     try:
         file = request.files.get('media')
         stored_hashes = request.form.get('storedHashes')
@@ -113,61 +113,53 @@ def verify_frames():
         stored_hashes = json.loads(stored_hashes)
 
         suffix = os.path.splitext(file.filename)[1] or '.webm'
-        with tempfile.NamedTemporaryFile(
-            delete=False,
-            suffix=suffix,
-            dir=UPLOAD_FOLDER
-        ) as tmp:
-            file.save(tmp.name)
-            tmp_path = tmp.name
+        tmp_path = save_upload(file, suffix)
+
+        print(f"Verifying video: {tmp_path}")
+        print(f"Stored hashes count: {len(stored_hashes)}")
 
         result = verify_frame_hashes(tmp_path, stored_hashes)
 
-        os.unlink(tmp_path)
+        print(f"Verification result: {result.get('verdict')} - {result.get('tampered_count')} tampered")
 
         return jsonify(result)
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
 
 @app.route('/hash-image', methods=['POST'])
 def hash_image_route():
-    """
-    Receives an image file.
-    Hashes whole image + each 64x64 block.
-    Returns block hash map for tamper localization.
-    """
+    tmp_path = None
     try:
         file = request.files.get('media')
         if not file:
             return jsonify({'error': 'No file provided'}), 400
 
         suffix = os.path.splitext(file.filename)[1] or '.png'
-        with tempfile.NamedTemporaryFile(
-            delete=False,
-            suffix=suffix,
-            dir=UPLOAD_FOLDER
-        ) as tmp:
-            file.save(tmp.name)
-            tmp_path = tmp.name
+        tmp_path = save_upload(file, suffix)
 
         result = hash_image(tmp_path)
-
-        os.unlink(tmp_path)
 
         return jsonify(result)
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
 
 @app.route('/verify-image', methods=['POST'])
 def verify_image_route():
-    """
-    Receives an image + stored block hashes.
-    Returns which blocks were tampered with coordinates.
-    """
+    tmp_path = None
     try:
         file = request.files.get('media')
         stored_block_hashes = request.form.get('storedBlockHashes')
@@ -179,13 +171,7 @@ def verify_image_route():
         stored_block_hashes = json.loads(stored_block_hashes)
 
         suffix = os.path.splitext(file.filename)[1] or '.png'
-        with tempfile.NamedTemporaryFile(
-            delete=False,
-            suffix=suffix,
-            dir=UPLOAD_FOLDER
-        ) as tmp:
-            file.save(tmp.name)
-            tmp_path = tmp.name
+        tmp_path = save_upload(file, suffix)
 
         result = verify_image_blocks(
             tmp_path,
@@ -193,12 +179,15 @@ def verify_image_route():
             stored_overall_hash
         )
 
-        os.unlink(tmp_path)
-
         return jsonify(result)
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
 
 if __name__ == '__main__':
