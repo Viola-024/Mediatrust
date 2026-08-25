@@ -103,8 +103,10 @@ def hash_frames():
 @app.route('/verify-frames', methods=['POST'])
 def verify_frames():
     tmp_path = None
+    orig_tmp_path = None
     try:
         file = request.files.get('media')
+        orig_file = request.files.get('original_media')
         stored_hashes = request.form.get('storedHashes')
 
         if not file or not stored_hashes:
@@ -115,10 +117,14 @@ def verify_frames():
         suffix = os.path.splitext(file.filename)[1] or '.webm'
         tmp_path = save_upload(file, suffix)
 
+        if orig_file:
+            orig_suffix = os.path.splitext(orig_file.filename)[1] or '.webm'
+            orig_tmp_path = save_upload(orig_file, orig_suffix)
+
         print(f"Verifying video: {tmp_path}")
         print(f"Stored hashes count: {len(stored_hashes)}")
 
-        result = verify_frame_hashes(tmp_path, stored_hashes)
+        result = verify_frame_hashes(tmp_path, stored_hashes, orig_tmp_path)
 
         print(f"Verification result: {result.get('verdict')} - {result.get('tampered_count')} tampered")
 
@@ -131,6 +137,8 @@ def verify_frames():
     finally:
         if tmp_path and os.path.exists(tmp_path):
             os.remove(tmp_path)
+        if orig_tmp_path and os.path.exists(orig_tmp_path):
+            os.remove(orig_tmp_path)
 
 
 @app.route('/hash-image', methods=['POST'])

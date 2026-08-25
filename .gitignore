@@ -1,6 +1,11 @@
 node_modules/
 uploads/
+backend/uploads/
+watermark/uploads/
+temp/
+backend/temp/
 __pycache__/
 *.pyc
 .env
 .venv/
+trimmed_video.webm

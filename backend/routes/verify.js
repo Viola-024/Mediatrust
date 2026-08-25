@@ -44,6 +44,10 @@ router.post('/', upload.single('media'), async (req, res) => {
         formData.append('media', fs.createReadStream(file.path), file.originalname || 'video.webm');
         formData.append('storedHashes', hashesString);
 
+        if (originalExists) {
+          formData.append('original_media', fs.createReadStream(originalFilePath), record.fileName);
+        }
+
         const response = await axios.post(
           'http://127.0.0.1:5001/verify-frames',
           formData,
@@ -151,12 +155,16 @@ router.post('/', upload.single('media'), async (req, res) => {
       timestamp: record.timestamp,
       verdict: isAuthentic ? 'AUTHENTIC MEDIA' : 'MEDIA TAMPERED',
       totalFrames: verificationResult.total_frames,
+      originalTotalFrames: verificationResult.original_total_frames || record.totalFrames,
+      submittedTotalFrames: verificationResult.submitted_total_frames || verificationResult.total_frames,
       tamperedCount: verificationResult.tampered_count,
       intactCount: verificationResult.intact_count,
       tamperPercentage: verificationResult.tamper_percentage,
       firstTamperedFrame: verificationResult.first_tampered_frame || null,
       tamperedFrames: verificationResult.tampered_frames || [],
       tamperedBlocks: verificationResult.tampered_blocks || [],
+      editDiagnostics: verificationResult.edit_diagnostics || [],
+      visualComparisons: verificationResult.visual_comparisons || []
     };
 
     res.json(report);

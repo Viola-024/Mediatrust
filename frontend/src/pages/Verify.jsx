@@ -279,7 +279,7 @@ function Verify() {
                       )?.slice(0, 10).map((item, i) => (
                         <div key={i} style={styles.tamperedItem}>
                           {result.mediaType === 'video'
-                            ? `Frame ${item.frame_index}`
+                            ? `Frame ${item.frame_index} (Expected: ${item.expected} → Got: ${item.got})`
                             : `Region at row ${item.row}, col ${item.col}`
                           }
                         </div>
@@ -290,6 +290,64 @@ function Verify() {
                         </p>
                       )}
                     </div>
+                  </div>
+                )}
+
+                {/* Edit Diagnostics - What was edited */}
+                {result.editDiagnostics && result.editDiagnostics.length > 0 && (
+                  <div style={styles.diagnosticsSection}>
+                    <p style={styles.diagnosticsTitle}>
+                      🔍 Modification Diagnostics (What Was Edited):
+                    </p>
+                    <div style={styles.diagnosticsList}>
+                      {result.editDiagnostics.map((diag, i) => (
+                        <div key={i} style={styles.diagnosticItem}>
+                          {diag}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Visual Side-by-Side Comparison */}
+                {result.visualComparisons && result.visualComparisons.length > 0 && (
+                  <div style={styles.visualCompSection}>
+                    <p style={styles.visualCompTitle}>
+                      📸 Visual Frame Comparison (Original vs Tampered):
+                    </p>
+                    {result.visualComparisons.map((comp, idx) => (
+                      <div key={idx} style={styles.compCard}>
+                        <p style={styles.compCardHeading}>
+                          Frame #{comp.frame_index} Inspection
+                        </p>
+                        <div style={styles.compGrid}>
+                          <div style={styles.compColumn}>
+                            <span style={styles.compBadgeOriginal}>✅ Original</span>
+                            <img
+                              src={comp.original_image}
+                              alt={`Original Frame ${comp.frame_index}`}
+                              style={styles.compImg}
+                            />
+                          </div>
+                          <div style={styles.compColumn}>
+                            <span style={styles.compBadgeTampered}>❌ Tampered</span>
+                            <img
+                              src={comp.tampered_image}
+                              alt={`Tampered Frame ${comp.frame_index}`}
+                              style={styles.compImg}
+                            />
+                          </div>
+                          <div style={styles.compColumn}>
+                            <span style={styles.compBadgeDiff}>🔥 Difference Heatmap</span>
+                            <img
+                              src={comp.diff_heatmap}
+                              alt={`Difference Frame ${comp.frame_index}`}
+                              style={styles.compImg}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -596,6 +654,103 @@ const styles = {
     color: '#64748b',
     fontSize: '0.8rem',
     margin: '4px 0 0 0',
+  },
+  diagnosticsSection: {
+    marginTop: '16px',
+    backgroundColor: 'rgba(239,68,68,0.05)',
+    border: '1px solid rgba(239,68,68,0.2)',
+    borderRadius: '10px',
+    padding: '12px 14px',
+  },
+  diagnosticsTitle: {
+    color: '#f87171',
+    fontSize: '0.85rem',
+    fontWeight: '700',
+    margin: '0 0 8px 0',
+  },
+  diagnosticsList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+  },
+  diagnosticItem: {
+    color: '#fca5a5',
+    fontSize: '0.82rem',
+    lineHeight: '1.4',
+  },
+  visualCompSection: {
+    marginTop: '16px',
+  },
+  visualCompTitle: {
+    color: '#f1f5f9',
+    fontSize: '0.85rem',
+    fontWeight: '700',
+    marginBottom: '10px',
+  },
+  compCard: {
+    backgroundColor: 'rgba(15,23,42,0.6)',
+    border: '1px solid rgba(255,255,255,0.08)',
+    borderRadius: '12px',
+    padding: '12px',
+    marginBottom: '12px',
+  },
+  compCardHeading: {
+    color: '#94a3b8',
+    fontSize: '0.8rem',
+    fontWeight: '600',
+    margin: '0 0 8px 0',
+  },
+  compGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
+    gap: '10px',
+  },
+  compColumn: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+    alignItems: 'center',
+  },
+  compBadgeOriginal: {
+    fontSize: '0.72rem',
+    fontWeight: '600',
+    color: '#10b981',
+    backgroundColor: 'rgba(16,185,129,0.15)',
+    padding: '2px 8px',
+    borderRadius: '4px',
+    width: '100%',
+    textAlign: 'center',
+    boxSizing: 'border-box',
+  },
+  compBadgeTampered: {
+    fontSize: '0.72rem',
+    fontWeight: '600',
+    color: '#ef4444',
+    backgroundColor: 'rgba(239,68,68,0.15)',
+    padding: '2px 8px',
+    borderRadius: '4px',
+    width: '100%',
+    textAlign: 'center',
+    boxSizing: 'border-box',
+  },
+  compBadgeDiff: {
+    fontSize: '0.72rem',
+    fontWeight: '600',
+    color: '#f59e0b',
+    backgroundColor: 'rgba(245,158,11,0.15)',
+    padding: '2px 8px',
+    borderRadius: '4px',
+    width: '100%',
+    textAlign: 'center',
+    boxSizing: 'border-box',
+  },
+  compImg: {
+    width: '100%',
+    borderRadius: '6px',
+    border: '1px solid rgba(255,255,255,0.1)',
+    aspectRatio: '4/3',
+    objectFit: 'cover',
+    backgroundColor: '#000',
   },
   finalNote: {
     padding: '14px 20px',
