@@ -51,7 +51,7 @@ router.post('/', upload.single('media'), async (req, res) => {
         const response = await axios.post(
           'http://127.0.0.1:5001/verify-frames',
           formData,
-          { headers: formData.getHeaders(), timeout: 60000 }
+          { headers: formData.getHeaders(), timeout: 120000 }
         );
 
         verificationResult = response.data;

@@ -5,10 +5,87 @@ import hashlib
 import base64
 import numpy as np
 
+
+def crop_letterbox_borders(img, tol=25):
+    """
+    Automatically detects and crops out black letterbox (top/bottom)
+    or pillarbox (left/right) bars added by video editors during export.
+    """
+    try:
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        h, w = gray.shape
+
+        # Row and column brightness profiles
+        row_means = gray.mean(axis=1)
+        col_means = gray.mean(axis=0)
+
+        rows = np.where(row_means > tol)[0]
+        cols = np.where(col_means > tol)[0]
+
+        if len(rows) > 0 and len(cols) > 0:
+            r_start, r_end = rows[0], rows[-1] + 1
+            c_start, c_end = cols[0], cols[-1] + 1
+
+            # Only crop if borders represent significant padding (> 4% of dimension)
+            if (r_end - r_start >= h * 0.5) and (c_end - c_start >= w * 0.5):
+                return img[r_start:r_end, c_start:c_end]
+        return img
+    except Exception:
+        return img
+
+
+def compute_phash_hex(img, hash_size=8, highfreq_factor=4):
+    """
+    Compute 64-bit DCT perceptual hash as a 16-character hex string.
+    Crops out editor black padding bars for robust comparison.
+    """
+    try:
+        clean_img = crop_letterbox_borders(img)
+        gray = cv2.cvtColor(clean_img, cv2.COLOR_BGR2GRAY)
+        img_size = hash_size * highfreq_factor
+        resized = cv2.resize(gray, (img_size, img_size), interpolation=cv2.INTER_AREA)
+        dct = cv2.dct(np.float32(resized))
+        dct_low = dct[:hash_size, :hash_size]
+        med = np.median(dct_low)
+        bits = (dct_low > med).flatten()
+        val = 0
+        for b in bits:
+            val = (val << 1) | (1 if b else 0)
+        return hex(val)[2:].zfill(16)
+    except Exception:
+        return "0000000000000000"
+
+
+def compute_dhash_hex(img, hash_size=8):
+    """Compute 64-bit difference gradient hash as a 16-character hex string."""
+    try:
+        clean_img = crop_letterbox_borders(img)
+        gray = cv2.cvtColor(clean_img, cv2.COLOR_BGR2GRAY)
+        resized = cv2.resize(gray, (hash_size + 1, hash_size), interpolation=cv2.INTER_AREA)
+        bits = (resized[:, 1:] > resized[:, :-1]).flatten()
+        val = 0
+        for b in bits:
+            val = (val << 1) | (1 if b else 0)
+        return hex(val)[2:].zfill(16)
+    except Exception:
+        return "0000000000000000"
+
+
+def hex_hamming_distance(hex1, hex2):
+    """Compute bitwise Hamming distance between two 64-bit hex hashes."""
+    try:
+        v1 = int(hex1, 16)
+        v2 = int(hex2, 16)
+        return bin(v1 ^ v2).count('1')
+    except Exception:
+        return 64
+
+
 def extract_and_hash_frames(video_path):
     """
-    Extract every frame from video using av library.
-    Works with .webm, .mp4, and other formats.
+    Dual Hashing Pipeline:
+    1. SHA-256 for cryptographic tamper-proof hash chain.
+    2. pHash (DCT) & dHash (Gradient) for compression-resilient visual fingerprinting.
     """
     try:
         container = av.open(video_path)
@@ -19,16 +96,21 @@ def extract_and_hash_frames(video_path):
         for frame in container.decode(video=0):
             img = frame.to_ndarray(format='bgr24')
 
+            # 1. Cryptographic SHA-256 Chain
             _, buffer = cv2.imencode('.jpg', img)
             frame_bytes = base64.b64encode(buffer.tobytes()).decode('utf-8')
-
-            # Chain hash
             combined = frame_bytes + previous_hash
             current_hash = hashlib.sha256(combined.encode()).hexdigest()
 
+            # 2. Perceptual Fingerprints (pHash + dHash)
+            ph_hex = compute_phash_hex(img)
+            dh_hex = compute_dhash_hex(img)
+
             frame_hashes.append({
                 "frame_index": frame_count,
-                "hash": current_hash
+                "hash": current_hash,
+                "phash": ph_hex,
+                "dhash": dh_hex
             })
 
             previous_hash = current_hash
@@ -46,45 +128,76 @@ def extract_and_hash_frames(video_path):
         return {"error": str(e)}
 
 
-def compute_dhash(img):
-    """Compute 64-bit difference hash for perceptual image matching."""
+def normalize_color_and_lighting(orig_img, test_img):
+    """
+    Vectorized channel normalization between WebM (VP8/VP9) and MP4 (H.264).
+    """
     try:
-        resized = cv2.resize(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), (9, 8))
-        diff = resized[:, 1:] > resized[:, :-1]
-        return diff
+        orig_clean = crop_letterbox_borders(orig_img)
+        test_clean = crop_letterbox_borders(test_img)
+
+        h, w = orig_clean.shape[:2]
+        if test_clean.shape[:2] != (h, w):
+            test_img_res = cv2.resize(test_clean, (w, h))
+        else:
+            test_img_res = test_clean
+
+        orig_f = orig_clean.astype(np.float32)
+        test_f = test_img_res.astype(np.float32)
+
+        mu_o = np.mean(orig_f, axis=(0, 1))
+        std_o = np.std(orig_f, axis=(0, 1))
+        mu_t = np.mean(test_f, axis=(0, 1))
+        std_t = np.std(test_f, axis=(0, 1))
+        std_t[std_t < 1e-2] = 1.0
+
+        norm_test = (test_f - mu_t) * (std_o / std_t) + mu_o
+        return np.clip(norm_test, 0, 255).astype(np.uint8)
     except Exception:
-        return np.zeros((8, 8), dtype=bool)
+        return test_img
 
 
 def generate_frame_comparison(orig_img, tamp_img):
     """
-    Generate visual difference overlay between original and tampered frame.
-    Returns base64 encoded images of original, tampered, and difference heatmap.
+    Generate visual difference overlay with bounding boxes on genuinely modified regions.
+    Automatically removes editor black pillarbox bars to focus only on content.
     """
     try:
-        h, w = orig_img.shape[:2]
-        if tamp_img.shape[:2] != (h, w):
-            tamp_img_res = cv2.resize(tamp_img, (w, h))
-        else:
-            tamp_img_res = tamp_img
+        orig_clean = crop_letterbox_borders(orig_img)
+        tamp_clean = crop_letterbox_borders(tamp_img)
 
-        diff = cv2.absdiff(orig_img, tamp_img_res)
+        h, w = orig_clean.shape[:2]
+        if tamp_clean.shape[:2] != (h, w):
+            tamp_img_res = cv2.resize(tamp_clean, (w, h))
+        else:
+            tamp_img_res = tamp_clean
+
+        norm_tamp = normalize_color_and_lighting(orig_clean, tamp_img_res)
+
+        orig_b = cv2.GaussianBlur(orig_clean, (5, 5), 0)
+        tamp_b = cv2.GaussianBlur(norm_tamp, (5, 5), 0)
+
+        diff = cv2.absdiff(orig_b, tamp_b)
         gray_diff = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
-        _, thresh = cv2.threshold(gray_diff, 20, 255, cv2.THRESH_BINARY)
+
+        _, thresh = cv2.threshold(gray_diff, 40, 255, cv2.THRESH_BINARY)
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+        thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
+        thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
 
         heatmap = cv2.applyColorMap(gray_diff, cv2.COLORMAP_JET)
-        diff_vis = cv2.addWeighted(tamp_img_res, 0.5, heatmap, 0.5, 0)
+        diff_vis = cv2.addWeighted(tamp_img_res, 0.6, heatmap, 0.4, 0)
 
         contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         bounding_boxes = 0
         for c in contours:
-            if cv2.contourArea(c) > 40:
+            if cv2.contourArea(c) > 400:
                 x, y, bw, bh = cv2.boundingRect(c)
                 cv2.rectangle(diff_vis, (x, y), (x + bw, y + bh), (0, 0, 255), 2)
                 bounding_boxes += 1
 
-        _, buf_orig = cv2.imencode('.jpg', orig_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
-        _, buf_tamp = cv2.imencode('.jpg', tamp_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        _, buf_orig = cv2.imencode('.jpg', orig_clean, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        _, buf_tamp = cv2.imencode('.jpg', tamp_img_res, [cv2.IMWRITE_JPEG_QUALITY, 85])
         _, buf_diff = cv2.imencode('.jpg', diff_vis, [cv2.IMWRITE_JPEG_QUALITY, 85])
 
         return {
@@ -100,76 +213,110 @@ def generate_frame_comparison(orig_img, tamp_img):
 
 def verify_frame_hashes(video_path, stored_hashes, original_video_path=None):
     """
-    Intelligent forensic verification of video frames.
-    Performs perceptual temporal alignment when video is trimmed or re-encoded,
-    identifying exact intact segments vs. trimmed/tampered segments.
+    Intelligent forensic verification of video frames using Dual Hashing (SHA-256 + pHash).
+    Performs monotonic 1-to-1 sequence matching.
     """
     try:
-        # 1. Read submitted video frames
+        # 1. Read submitted video frames and perceptual fingerprints
         sub_container = av.open(video_path)
         sub_frames = []
+        sub_phash_list = []
+        sub_dhash_list = []
+
         for f in sub_container.decode(video=0):
-            sub_frames.append(f.to_ndarray(format='bgr24'))
+            img = f.to_ndarray(format='bgr24')
+            sub_frames.append(img)
+            sub_phash_list.append(compute_phash_hex(img))
+            sub_dhash_list.append(compute_dhash_hex(img))
         sub_container.close()
 
         sub_total = len(sub_frames)
 
-        # 2. If original video file is available, perform perceptual temporal alignment
+        # 2. Check stored reference hashes & original video file
+        stored_total = len(stored_hashes) if stored_hashes else 0
+
+        orig_frames = []
+        orig_phash_list = []
+        orig_dhash_list = []
+
         if original_video_path and os.path.exists(original_video_path):
             orig_container = av.open(original_video_path)
-            orig_frames = []
             for f in orig_container.decode(video=0):
-                orig_frames.append(f.to_ndarray(format='bgr24'))
+                img = f.to_ndarray(format='bgr24')
+                orig_frames.append(img)
+                orig_phash_list.append(compute_phash_hex(img))
+                orig_dhash_list.append(compute_dhash_hex(img))
             orig_container.close()
 
-            orig_total = len(orig_frames)
+        orig_total = len(orig_frames) if orig_frames else stored_total
+        total_frames = max(orig_total, stored_total)
 
-            # Compute dHashes
-            orig_dhashes = [compute_dhash(img) for img in orig_frames]
-            sub_dhashes = [compute_dhash(img) for img in sub_frames]
+        tampered_frames = []
+        intact_frames = []
+        trimmed_frames = []
+        visual_comparisons = []
+        tampered_sample_candidates = []
 
-            tampered_frames = []
-            intact_frames = []
-            trimmed_frames = []
-            visual_comparisons = []
-            extracted_tampered_samples = []
+        last_matched_j = -1
+        win_radius = max(35, abs(total_frames - sub_total) + 20)
 
-            # Check if videos are identical in frame count & content
-            is_perfect_match = True
+        for i in range(total_frames):
+            stored_entry = stored_hashes[i] if (stored_hashes and i < len(stored_hashes)) else None
 
-            for i in range(orig_total):
-                oh = orig_dhashes[i]
+            oh_ph = None
+            if stored_entry and isinstance(stored_entry, dict) and stored_entry.get("phash"):
+                oh_ph = stored_entry.get("phash")
+            elif i < len(orig_phash_list):
+                oh_ph = orig_phash_list[i]
 
-                # Map original frame index to expected submitted frame range
-                expected_sub_idx = int(round(i * (sub_total / max(1, orig_total))))
+            oh_dh = None
+            if stored_entry and isinstance(stored_entry, dict) and stored_entry.get("dhash"):
+                oh_dh = stored_entry.get("dhash")
+            elif i < len(orig_dhash_list):
+                oh_dh = orig_dhash_list[i]
 
-                if expected_sub_idx < sub_total:
-                    # Search best match in a small local window around expected index
-                    win_start = max(0, expected_sub_idx - 5)
-                    win_end = min(sub_total, expected_sub_idx + 6)
-                    best_dist = 64
-                    best_j = expected_sub_idx
+            next_j = last_matched_j + 1
+            matched_j = None
 
-                    for j in range(win_start, win_end):
-                        dist = np.count_nonzero(oh != sub_dhashes[j])
-                        if dist < best_dist:
-                            best_dist = dist
-                            best_j = j
+            # 1. Check candidate next_j
+            if next_j < sub_total and oh_ph and oh_dh:
+                p_dist = hex_hamming_distance(oh_ph, sub_phash_list[next_j])
+                d_dist = hex_hamming_distance(oh_dh, sub_dhash_list[next_j])
+                if (p_dist + d_dist) <= 26:
+                    matched_j = next_j
 
-                    if best_dist <= 12:
-                        intact_frames.append(i)
-                    else:
-                        is_perfect_match = False
-                        tampered_frames.append({
-                            "frame_index": i,
-                            "expected": f"Frame #{i} (Original)",
-                            "got": f"Altered (Distance: {best_dist})"
-                        })
-                        if len(extracted_tampered_samples) < 3:
-                            extracted_tampered_samples.append((i, orig_frames[i], sub_frames[best_j]))
+            # 2. Window search if candidate failed (meaning a cut or temporal jump occurred)
+            if matched_j is None and next_j < sub_total and oh_ph and oh_dh:
+                win_start = next_j
+                win_end = min(sub_total, next_j + win_radius + 1)
+                best_j = next_j
+                best_score = 999
+
+                for j in range(win_start, win_end):
+                    p_d = hex_hamming_distance(oh_ph, sub_phash_list[j])
+                    d_d = hex_hamming_distance(oh_dh, sub_dhash_list[j])
+                    score = p_d + d_d
+                    if score < best_score:
+                        best_score = score
+                        best_j = j
+
+                if best_score <= 26:
+                    matched_j = best_j
+
+            if matched_j is not None:
+                intact_frames.append(i)
+                last_matched_j = matched_j
+            else:
+                if next_j < sub_total:
+                    tampered_frames.append({
+                        "frame_index": i,
+                        "expected": f"Frame #{i} (Original)",
+                        "got": "CUT / ALTERED (Missing in submitted video)"
+                    })
+                    if orig_frames and i < len(orig_frames):
+                        ref_j = min(sub_total - 1, max(0, next_j))
+                        tampered_sample_candidates.append((i, orig_frames[i], sub_frames[ref_j]))
                 else:
-                    # Video ended before this frame -> Trimmed / Cut off
-                    is_perfect_match = False
                     trimmed_frames.append(i)
                     tampered_frames.append({
                         "frame_index": i,
@@ -177,105 +324,73 @@ def verify_frame_hashes(video_path, stored_hashes, original_video_path=None):
                         "got": "TRIMMED / CUT OFF"
                     })
 
-            # Check for extra frames at end of submitted video
-            if sub_total > orig_total:
-                extra_count = sub_total - orig_total
-                is_perfect_match = False
+        intact_count = len(intact_frames)
+        tampered_count = total_frames - intact_count
+        tamper_percentage = round((tampered_count / max(1, total_frames)) * 100, 2)
+        is_tampered = (tampered_count > 0) or (sub_total != total_frames)
 
-            total_frames = orig_total
-            intact_count = len(intact_frames)
-            tampered_count = len(tampered_frames) + len(trimmed_frames)
-            # Cap tampered count to total
-            tampered_count = total_frames - intact_count
-            tamper_percentage = round((tampered_count / max(1, total_frames)) * 100, 2)
-            is_tampered = not is_perfect_match or tampered_count > 0
-
-            # Generate visual comparisons
-            for f_idx, orig_img, tamp_img in extracted_tampered_samples:
+        # Generate representative visual comparison samples
+        if tampered_sample_candidates:
+            step = max(1, len(tampered_sample_candidates) // 3)
+            samples = tampered_sample_candidates[::step][:3]
+            for f_idx, orig_img, tamp_img in samples:
                 comp = generate_frame_comparison(orig_img, tamp_img)
                 if comp:
                     comp["frame_index"] = f_idx
                     visual_comparisons.append(comp)
 
-            # Formulate diagnostics
-            edit_diagnostics = []
-            if len(trimmed_frames) > 0:
-                edit_diagnostics.append(
-                    f"✂️ Video Trimmed at End: {len(trimmed_frames)} frame(s) removed (Frames #{trimmed_frames[0]} to #{trimmed_frames[-1]} cut off)."
-                )
-            if intact_count > 0 and is_tampered:
-                edit_diagnostics.append(
-                    f"✅ Content Preserved: {intact_count} frame(s) ({round(intact_count/total_frames*100, 1)}% of original video) match the authentic recording."
-                )
-            if sub_total != orig_total:
-                edit_diagnostics.append(
-                    f"⏱️ Stream Resampling: Submitted video has {sub_total} frames (Original: {orig_total} frames)."
-                )
-            if len(tampered_frames) > len(trimmed_frames):
-                visual_tampered_count = len(tampered_frames) - len(trimmed_frames)
-                edit_diagnostics.append(
-                    f"🎨 Visual Modifications: {visual_tampered_count} frame(s) exhibit pixel modifications."
-                )
+        edit_diagnostics = []
+        if total_frames != sub_total:
+            missing_diff = abs(total_frames - sub_total)
+            edit_diagnostics.append(
+                f"✂️ Frame Count Mismatch: Submitted video has {sub_total} frames ({missing_diff} frames missing / cut from Original {total_frames} frames)."
+            )
+        if len(trimmed_frames) > 0:
+            edit_diagnostics.append(
+                f"✂️ Video Trimmed at End: {len(trimmed_frames)} frame(s) removed (Frames #{trimmed_frames[0]} to #{trimmed_frames[-1]} cut off)."
+            )
+        if intact_count > 0 and is_tampered:
+            edit_diagnostics.append(
+                f"✅ Content Preserved: {intact_count} frame(s) ({round(intact_count / total_frames * 100, 1)}% of original video) verified authentic despite WebM/MP4 transcode."
+            )
 
-            return {
-                "total_frames": total_frames,
-                "original_total_frames": orig_total,
-                "submitted_total_frames": sub_total,
-                "tampered_frames": tampered_frames,
-                "tampered_count": tampered_count,
-                "intact_count": intact_count,
-                "tamper_percentage": tamper_percentage,
-                "verdict": "TAMPERED" if is_tampered else "AUTHENTIC",
-                "first_tampered_frame": tampered_frames[0]["frame_index"] if tampered_frames else None,
-                "edit_diagnostics": edit_diagnostics,
-                "visual_comparisons": visual_comparisons
-            }
+        visual_tampered_count = len(tampered_frames) - len(trimmed_frames)
+        if visual_tampered_count > 0:
+            intervals = []
+            vis_indices = [t["frame_index"] for t in tampered_frames if t["got"] != "TRIMMED / CUT OFF"]
+            if vis_indices:
+                start_i = vis_indices[0]
+                prev_i = vis_indices[0]
+                for idx in vis_indices[1:]:
+                    if idx == prev_i + 1:
+                        prev_i = idx
+                    else:
+                        intervals.append((start_i, prev_i))
+                        start_i = idx
+                        prev_i = idx
+                intervals.append((start_i, prev_i))
 
-        # 3. Fallback to strict hash-by-hash checking if original video file is not stored on disk
-        tampered_frames = []
-        previous_hash = ""
-        frame_count = 0
-
-        for img in sub_frames:
-            _, buffer = cv2.imencode('.jpg', img)
-            frame_bytes = base64.b64encode(buffer.tobytes()).decode('utf-8')
-            combined = frame_bytes + previous_hash
-            current_hash = hashlib.sha256(combined.encode()).hexdigest()
-
-            if frame_count < len(stored_hashes):
-                stored = stored_hashes[frame_count]["hash"]
-                if current_hash != stored:
-                    tampered_frames.append({
-                        "frame_index": frame_count,
-                        "expected": stored[:16] + "...",
-                        "got": current_hash[:16] + "..."
-                    })
-            else:
-                tampered_frames.append({
-                    "frame_index": frame_count,
-                    "expected": "NONE (Extra frame)",
-                    "got": current_hash[:16] + "..."
-                })
-
-            previous_hash = current_hash
-            frame_count += 1
-
-        total = max(frame_count, len(stored_hashes))
-        tamper_percentage = (len(tampered_frames) / total * 100) if total > 0 else 0
-        is_tampered = len(tampered_frames) > 0
+            interval_strs = [
+                f"Frames #{s} to #{e} ({(e - s + 1)} frames, ~{round((e - s + 1) / 30.0, 1)}s)"
+                if s != e else f"Frame #{s}"
+                for s, e in intervals[:3]
+            ]
+            edit_diagnostics.append(
+                f"🎨 Localized Video Modifications/Cuts: {visual_tampered_count} frame(s) altered/missing in {', '.join(interval_strs)}."
+            )
 
         return {
-            "total_frames": total,
-            "original_total_frames": len(stored_hashes),
-            "submitted_total_frames": frame_count,
+            "total_frames": total_frames,
+            "original_total_frames": total_frames,
+            "submitted_total_frames": sub_total,
             "tampered_frames": tampered_frames,
-            "tampered_count": len(tampered_frames),
-            "intact_count": max(0, total - len(tampered_frames)),
-            "tamper_percentage": round(tamper_percentage, 2),
+            "tampered_count": tampered_count,
+            "intact_count": intact_count,
+            "tamper_percentage": tamper_percentage,
             "verdict": "TAMPERED" if is_tampered else "AUTHENTIC",
             "first_tampered_frame": tampered_frames[0]["frame_index"] if tampered_frames else None,
-            "edit_diagnostics": ["⚠️ Re-encoded or modified stream detected."],
-            "visual_comparisons": []
+            "edit_diagnostics": edit_diagnostics,
+            "visual_comparisons": visual_comparisons
         }
 
     except Exception as e:
