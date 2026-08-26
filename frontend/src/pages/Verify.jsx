@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import NotificationCenter from '../components/NotificationCenter';
 
 function Verify() {
   const navigate = useNavigate();
@@ -30,10 +31,16 @@ function Verify() {
     try {
       const formData = new FormData();
       formData.append('media', selectedFile);
-      formData.append('claimId', claimId);
+      formData.append('claimId', claimId.trim());
+
+      const token = localStorage.getItem('mediatrust_token');
+      const headers = { 'Content-Type': 'multipart/form-data' };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
 
       const res = await axios.post('http://localhost:5000/api/verify', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+        headers
       });
 
       setResult(res.data);
@@ -56,9 +63,12 @@ function Verify() {
           <div style={styles.navLogoIcon}>MT</div>
           <span style={styles.navLogoText}>MediaTrust</span>
         </div>
-        <button style={styles.navBackBtn} onClick={() => navigate('/')}>
-          ← Back to Home
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <NotificationCenter />
+          <button style={styles.navBackBtn} onClick={() => navigate('/')}>
+            ← Back to Home
+          </button>
+        </div>
       </nav>
 
       <div style={styles.content}>
@@ -104,13 +114,13 @@ function Verify() {
             {loading ? '⏳ Analysing...' : '🔍 Run Forensic Analysis'}
           </button>
 
-          {/* Multi-Section Result Output */}
+          {/* Results Block */}
           {result && (
             <div style={{
               ...styles.resultBox,
               borderColor: isAuthentic ? '#10b981' : '#ef4444'
             }}>
-              {/* Verdict Banner */}
+              {/* Main Verdict Card */}
               <div style={{
                 ...styles.verdictBanner,
                 backgroundColor: isAuthentic ? '#064e3b' : '#450a0a'

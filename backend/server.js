@@ -11,10 +11,12 @@ app.use(express.json());
 const authRoutes = require('./routes/auth');
 const uploadRoutes = require('./routes/upload');
 const verifyRoutes = require('./routes/verify');
+const notificationRoutes = require('./routes/notifications');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/verify', verifyRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // Connect to MongoDB
 mongoose.connect(process.env.MONGO_URI)

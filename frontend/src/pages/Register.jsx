@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import NotificationCenter from '../components/NotificationCenter';
 
 function Register() {
   const navigate = useNavigate();
@@ -43,7 +44,10 @@ function Register() {
           <div style={styles.navLogoIcon}>MT</div>
           <span style={styles.navLogoText}>MediaTrust</span>
         </div>
-        <button style={styles.navBackBtn} onClick={() => navigate('/')}>← Back to Home</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <NotificationCenter />
+          <button style={styles.navBackBtn} onClick={() => navigate('/')}>← Back to Home</button>
+        </div>
       </nav>
 
       {/* Content */}

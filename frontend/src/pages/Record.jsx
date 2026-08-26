@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import NotificationCenter from '../components/NotificationCenter';
 
 function Record() {
   const navigate = useNavigate();
@@ -8,8 +9,9 @@ function Record() {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [token, setToken] = useState('');
-  const [loggedIn, setLoggedIn] = useState(false);
+  const [token, setToken] = useState(localStorage.getItem('mediatrust_token') || '');
+  const [loggedIn, setLoggedIn] = useState(!!localStorage.getItem('mediatrust_token'));
+  const [userName, setUserName] = useState('');
 
   const [cameraMode, setCameraMode] = useState('video');
   const [recording, setRecording] = useState(false);
@@ -32,6 +34,14 @@ function Record() {
   const [pendingMedia, setPendingMedia] = useState(null);
 
   useEffect(() => {
+    const savedUser = localStorage.getItem('mediatrust_user');
+    if (savedUser) {
+      try {
+        const u = JSON.parse(savedUser);
+        setUserName(u.name || '');
+      } catch {}
+    }
+
     return () => {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
@@ -47,10 +57,21 @@ function Record() {
         password
       });
       setToken(res.data.token);
+      setUserName(res.data.name || '');
       setLoggedIn(true);
+      localStorage.setItem('mediatrust_token', res.data.token);
+      localStorage.setItem('mediatrust_user', JSON.stringify({ userId: res.data.userId, name: res.data.name }));
     } catch (err) {
       setError('Login failed. Please check your credentials.');
     }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('mediatrust_token');
+    localStorage.removeItem('mediatrust_user');
+    setToken('');
+    setUserName('');
+    setLoggedIn(false);
   };
 
   const startCamera = async () => {
@@ -130,18 +151,18 @@ function Record() {
     }, 'image/png');
   };
 
-  const saveToGallery = (blob, type, claimId) => {
-    const url = URL.createObjectURL(blob);
+  const saveToGallery = (mediaObj, type, claimId) => {
     const filename = type === 'video'
-      ? `MediaTrust_Video_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.webm`
-      : `MediaTrust_Photo_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.png`;
+      ? `MediaTrust_Video_${claimId || new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.webm`
+      : `MediaTrust_Photo_${claimId || new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.png`;
 
     const item = {
-      url,
+      url: mediaObj.url || (mediaObj.blob ? URL.createObjectURL(mediaObj.blob) : ''),
+      serverFileName: mediaObj.serverFileName,
       filename,
       type,
       date: new Date().toLocaleString(),
-      claimId: claimId || null,
+      claimId: claimId || mediaObj.claimId || null,
     };
 
     const existing = JSON.parse(localStorage.getItem('mediatrust_gallery') || '[]');
@@ -149,37 +170,50 @@ function Record() {
     localStorage.setItem('mediatrust_gallery', JSON.stringify(existing));
   };
 
-  const handleSaveToDevice = () => {
+  const handleSaveToDevice = async () => {
     if (!pendingMedia) return;
     const filename = pendingMedia.type === 'video'
-      ? `MediaTrust_Video_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.webm`
-      : `MediaTrust_Photo_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.png`;
-    const a = document.createElement('a');
-    a.href = pendingMedia.url;
-    a.download = filename;
-    a.click();
+      ? `MediaTrust_${pendingMedia.claimId || 'Video'}.webm`
+      : `MediaTrust_${pendingMedia.claimId || 'Photo'}.png`;
+
+    try {
+      if (pendingMedia.url && pendingMedia.url.startsWith('http')) {
+        const response = await fetch(pendingMedia.url);
+        const blob = await response.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(blobUrl);
+      } else {
+        const a = document.createElement('a');
+        a.href = pendingMedia.url;
+        a.download = filename;
+        a.click();
+      }
+    } catch (e) {
+      const a = document.createElement('a');
+      a.href = pendingMedia.url;
+      a.download = filename;
+      a.click();
+    }
     setShowSavePopup(false);
     setPendingMedia(null);
   };
 
   const handleSaveToGallery = () => {
     if (!pendingMedia) return;
-    saveToGallery(pendingMedia.blob, pendingMedia.type, result?.claimId);
+    saveToGallery(pendingMedia, pendingMedia.type, result?.claimId || pendingMedia.claimId);
     setShowSavePopup(false);
     setPendingMedia(null);
     alert('✅ Saved to MediaTrust Gallery!');
   };
 
-  const handleSaveBoth = () => {
+  const handleSaveBoth = async () => {
     if (!pendingMedia) return;
-    const filename = pendingMedia.type === 'video'
-      ? `MediaTrust_Video_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.webm`
-      : `MediaTrust_Photo_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.png`;
-    const a = document.createElement('a');
-    a.href = pendingMedia.url;
-    a.download = filename;
-    a.click();
-    saveToGallery(pendingMedia.blob, pendingMedia.type, result?.claimId);
+    await handleSaveToDevice();
+    saveToGallery(pendingMedia, pendingMedia.type, result?.claimId || pendingMedia.claimId);
     setShowSavePopup(false);
     setPendingMedia(null);
   };
@@ -226,6 +260,16 @@ function Record() {
       });
 
       setResult(res.data);
+      const serverFileName = res.data.fileName;
+      const watermarkedUrl = `http://localhost:5000/uploads/${serverFileName}`;
+
+      setPendingMedia({
+        blob: capturedMedia.blob,
+        url: watermarkedUrl,
+        serverFileName: serverFileName,
+        type: capturedType,
+        claimId: res.data.claimId
+      });
 
       // Show popup AFTER successful upload
       setShowSavePopup(true);
@@ -267,6 +311,18 @@ function Record() {
       });
 
       setResult(res.data);
+      const serverFileName = res.data.fileName;
+      const watermarkedUrl = `http://localhost:5000/uploads/${serverFileName}`;
+
+      setPendingMedia({
+        blob: selectedFile,
+        url: watermarkedUrl,
+        serverFileName: serverFileName,
+        type: selectedFile.type.includes('video') ? 'video' : 'image',
+        claimId: res.data.claimId
+      });
+
+      setShowSavePopup(true);
     } catch (err) {
       setError('Upload failed. Please try again.');
     } finally {
@@ -313,7 +369,10 @@ function Record() {
           <div style={styles.navLogoIcon}>MT</div>
           <span style={styles.navLogoText}>MediaTrust</span>
         </div>
-        <button style={styles.navBackBtn} onClick={() => { stopCamera(); navigate('/'); }}>← Back to Home</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <NotificationCenter />
+          <button style={styles.navBackBtn} onClick={() => { stopCamera(); navigate('/'); }}>← Back to Home</button>
+        </div>
       </nav>
 
       <div style={styles.content}>
@@ -361,7 +420,15 @@ function Record() {
             </div>
           ) : (
             <div>
-              <p style={styles.success}>✅ Logged in successfully</p>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <p style={{ ...styles.success, margin: 0 }}>✅ Logged in as {userName || 'Creator'}</p>
+                <button
+                  style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '0.8rem', cursor: 'pointer', textDecoration: 'underline' }}
+                  onClick={handleLogout}
+                >
+                  Logout
+                </button>
+              </div>
 
               {/* RECORD IN-APP TAB */}
               {activeTab === 'record' && (

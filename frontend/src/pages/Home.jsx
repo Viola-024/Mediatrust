@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import NotificationCenter from '../components/NotificationCenter';
 
 function Home() {
   const navigate = useNavigate();
@@ -16,6 +17,7 @@ function Home() {
         <div style={styles.navLinks}>
           <span style={styles.navLink} onClick={() => setModal('docs')}>Documentation</span>
           <span style={styles.navLink} onClick={() => setModal('about')}>About</span>
+          <NotificationCenter onLoginRequired={() => navigate('/record')} />
           <button style={styles.navBtn} onClick={() => navigate('/register')}>
             Get Started
           </button>

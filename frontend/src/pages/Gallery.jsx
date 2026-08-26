@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
+import NotificationCenter from '../components/NotificationCenter';
 
 function Gallery() {
   const navigate = useNavigate();
@@ -10,11 +12,49 @@ function Gallery() {
     setMediaItems(stored);
   }, []);
 
-  const handleDownload = (item) => {
-    const a = document.createElement('a');
-    a.href = item.url;
-    a.download = item.filename;
-    a.click();
+  const handleDownload = async (item) => {
+    try {
+      const downloadUrl = item.serverFileName
+        ? `http://localhost:5000/uploads/${item.serverFileName}`
+        : item.url;
+
+      if (downloadUrl && downloadUrl.startsWith('http')) {
+        const response = await fetch(downloadUrl);
+        const blob = await response.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = item.filename;
+        a.click();
+        URL.revokeObjectURL(blobUrl);
+      } else {
+        const a = document.createElement('a');
+        a.href = downloadUrl || item.url;
+        a.download = item.filename;
+        a.click();
+      }
+    } catch (err) {
+      const a = document.createElement('a');
+      a.href = item.url;
+      a.download = item.filename;
+      a.click();
+    }
+
+    // Notify original uploader
+    if (item.claimId || item.filename) {
+      try {
+        const token = localStorage.getItem('mediatrust_token');
+        const headers = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        await axios.post('http://localhost:5000/api/notifications/log-download', {
+          claimId: item.claimId,
+          fileName: item.filename
+        }, { headers });
+      } catch (err) {
+        console.error('Failed to log download notification:', err);
+      }
+    }
   };
 
   const handleDelete = (index) => {
@@ -25,10 +65,15 @@ function Gallery() {
 
   return (
     <div style={styles.container}>
-      <div style={styles.header}>
-        <button style={styles.backBtn} onClick={() => navigate('/')}>← Back</button>
-        <h2 style={styles.title}>📁 Media Gallery</h2>
-        <p style={styles.subtitle}>All media captured in MediaTrust</p>
+      <div style={{ ...styles.header, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <button style={styles.backBtn} onClick={() => navigate('/')}>← Back</button>
+          <h2 style={styles.title}>📁 Media Gallery</h2>
+          <p style={styles.subtitle}>All media captured in MediaTrust</p>
+        </div>
+        <div>
+          <NotificationCenter />
+        </div>
       </div>
 
       {mediaItems.length === 0 ? (

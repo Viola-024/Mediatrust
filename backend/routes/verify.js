@@ -7,15 +7,17 @@ const axios = require('axios');
 const FormData = require('form-data');
 const { generateHash } = require('../utils/hashChain');
 const MediaRecord = require('../models/MediaRecord');
+const Notification = require('../models/Notification');
+const jwt = require('jsonwebtoken');
 
 const upload = multer({ dest: 'temp/' });
 
 router.post('/', upload.single('media'), async (req, res) => {
   try {
     const file = req.file;
-    if (!file) return res.status(400).json({ message: 'No file provided' });
-
     const { claimId } = req.body;
+
+    if (!file) return res.status(400).json({ message: 'No file provided' });
     if (!claimId) return res.status(400).json({ message: 'Claim ID required' });
 
     // Find original record
@@ -34,15 +36,8 @@ router.post('/', upload.single('media'), async (req, res) => {
       const formData = new FormData();
 
       if (isVideo) {
-        console.log('frameHashes length:', record.frameHashes?.length);
-        console.log('frameHashes type:', typeof record.frameHashes);
-        console.log('sample:', JSON.stringify(record.frameHashes?.[0]));
-
-        const hashesString = JSON.stringify(record.frameHashes || []);
-        console.log('hashesString length:', hashesString.length);
-
         formData.append('media', fs.createReadStream(file.path), file.originalname || 'video.webm');
-        formData.append('storedHashes', hashesString);
+        formData.append('storedHashes', JSON.stringify(record.frameHashes || []));
 
         if (originalExists) {
           formData.append('original_media', fs.createReadStream(originalFilePath), record.fileName);
@@ -57,8 +52,7 @@ router.post('/', upload.single('media'), async (req, res) => {
         verificationResult = response.data;
         console.log(`Video verified: ${verificationResult.tampered_count} frames tampered out of ${verificationResult.total_frames}`);
       } else {
-        // For images — use the ORIGINAL stored file for re-hashing
-        // and compare with stored block hashes
+        // For images — use original stored file or uploaded file
         const imageToVerify = originalExists ? originalFilePath : file.path;
 
         formData.append(
@@ -66,8 +60,8 @@ router.post('/', upload.single('media'), async (req, res) => {
           fs.createReadStream(imageToVerify),
           record.fileName
         );
-        formData.append('storedBlockHashes', JSON.stringify(record.frameHashes));
-        formData.append('storedOverallHash', record.finalHash);
+        formData.append('storedBlockHashes', JSON.stringify(record.frameHashes || []));
+        formData.append('storedOverallHash', record.finalHash || '');
 
         const response = await axios.post(
           'http://127.0.0.1:5001/verify-image',
@@ -77,8 +71,7 @@ router.post('/', upload.single('media'), async (req, res) => {
 
         verificationResult = response.data;
 
-        // Now also check uploaded file against original
-        // to detect if user uploaded a different/tampered file
+        // Check uploaded file against original
         if (originalExists) {
           const uploadedBuffer = fs.readFileSync(file.path);
           const originalBuffer = fs.readFileSync(originalFilePath);
@@ -86,7 +79,6 @@ router.post('/', upload.single('media'), async (req, res) => {
           const originalHash = generateHash(originalBuffer.toString('base64'));
 
           if (uploadedHash !== originalHash) {
-            // File was modified after original upload
             verificationResult.verdict = 'TAMPERED';
             verificationResult.tampered_count = verificationResult.tampered_count || 1;
             verificationResult.tamper_percentage = verificationResult.tamper_percentage || 100;
@@ -140,7 +132,7 @@ router.post('/', upload.single('media'), async (req, res) => {
     }
 
     // Clean up temp file
-    fs.unlinkSync(file.path);
+    if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
 
     const isAuthentic = verificationResult.verdict === 'AUTHENTIC';
 
@@ -166,6 +158,45 @@ router.post('/', upload.single('media'), async (req, res) => {
       editDiagnostics: verificationResult.edit_diagnostics || [],
       visualComparisons: verificationResult.visual_comparisons || []
     };
+
+    // Extract optional verifier identity from JWT header if provided
+    let verifierId = null;
+    let verifierName = 'Anonymous Auditor';
+
+    const authHeader = req.headers['authorization'];
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1];
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        verifierId = decoded.userId;
+        verifierName = decoded.name || 'Authenticated Auditor';
+      } catch {
+        // Fallback to anonymous
+      }
+    }
+
+    // Save Access Notification for the original media uploader
+    if (record.userId) {
+      try {
+        const notification = new Notification({
+          recipient: record.userId,
+          claimId: record.claimId,
+          mediaType: record.mediaType || 'video',
+          fileName: record.fileName,
+          verifierName: verifierName,
+          verifierId: verifierId,
+          verdict: report.verdict,
+          tamperPercentage: report.tamperPercentage || 0,
+          tamperedCount: report.tamperedCount || 0,
+          ipAddress: req.ip || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '127.0.0.1',
+          userAgent: req.headers['user-agent'] || 'Unknown Client'
+        });
+        await notification.save();
+        console.log(`Access Notification saved for uploader ${record.userId} on Claim ${record.claimId}`);
+      } catch (notifErr) {
+        console.error('Failed to create access notification:', notifErr.message);
+      }
+    }
 
     res.json(report);
 
