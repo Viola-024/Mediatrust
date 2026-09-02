@@ -52,16 +52,14 @@ router.post('/', upload.single('media'), async (req, res) => {
         verificationResult = response.data;
         console.log(`Video verified: ${verificationResult.tampered_count} frames tampered out of ${verificationResult.total_frames}`);
       } else {
-        // For images — use original stored file or uploaded file
-        const imageToVerify = originalExists ? originalFilePath : file.path;
-
-        formData.append(
-          'media',
-          fs.createReadStream(imageToVerify),
-          record.fileName
-        );
+        // For images — send submitted file and stored hashes, plus original file if available
+        formData.append('media', fs.createReadStream(file.path), file.originalname || 'image.png');
         formData.append('storedBlockHashes', JSON.stringify(record.frameHashes || []));
         formData.append('storedOverallHash', record.finalHash || '');
+
+        if (originalExists) {
+          formData.append('original_media', fs.createReadStream(originalFilePath), record.fileName);
+        }
 
         const response = await axios.post(
           'http://127.0.0.1:5001/verify-image',
@@ -71,27 +69,22 @@ router.post('/', upload.single('media'), async (req, res) => {
 
         verificationResult = response.data;
 
-        // Check uploaded file against original
+        // Exact binary file match fast-path
         if (originalExists) {
           const uploadedBuffer = fs.readFileSync(file.path);
           const originalBuffer = fs.readFileSync(originalFilePath);
           const uploadedHash = generateHash(uploadedBuffer.toString('base64'));
           const originalHash = generateHash(originalBuffer.toString('base64'));
 
-          if (uploadedHash !== originalHash) {
-            verificationResult.verdict = 'TAMPERED';
-            verificationResult.tampered_count = verificationResult.tampered_count || 1;
-            verificationResult.tamper_percentage = verificationResult.tamper_percentage || 100;
-            console.log('File hash mismatch — file was modified after upload');
-          } else {
+          if (uploadedHash === originalHash) {
             verificationResult.verdict = 'AUTHENTIC';
             verificationResult.tampered_count = 0;
             verificationResult.tamper_percentage = 0;
-            console.log('File hash match — file is authentic');
+            console.log('Exact file hash match — file is authentic');
           }
         }
 
-        console.log(`Image verified: ${verificationResult.tampered_count} blocks tampered`);
+        console.log(`Image verified: ${verificationResult.tampered_count} blocks tampered (Verdict: ${verificationResult.verdict})`);
       }
 
     } catch (pythonError) {

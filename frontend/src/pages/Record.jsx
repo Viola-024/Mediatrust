@@ -177,7 +177,14 @@ function Record() {
       : `MediaTrust_${pendingMedia.claimId || 'Photo'}.png`;
 
     try {
-      if (pendingMedia.url && pendingMedia.url.startsWith('http')) {
+      if (pendingMedia.blob) {
+        const blobUrl = URL.createObjectURL(pendingMedia.blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(blobUrl);
+      } else if (pendingMedia.url && pendingMedia.url.startsWith('http')) {
         const response = await fetch(pendingMedia.url);
         const blob = await response.blob();
         const blobUrl = URL.createObjectURL(blob);
@@ -186,17 +193,19 @@ function Record() {
         a.download = filename;
         a.click();
         URL.revokeObjectURL(blobUrl);
-      } else {
+      } else if (pendingMedia.url) {
         const a = document.createElement('a');
         a.href = pendingMedia.url;
         a.download = filename;
         a.click();
       }
     } catch (e) {
-      const a = document.createElement('a');
-      a.href = pendingMedia.url;
-      a.download = filename;
-      a.click();
+      if (pendingMedia.url) {
+        const a = document.createElement('a');
+        a.href = pendingMedia.url;
+        a.download = filename;
+        a.click();
+      }
     }
     setShowSavePopup(false);
     setPendingMedia(null);

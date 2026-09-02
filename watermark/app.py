@@ -168,8 +168,10 @@ def hash_image_route():
 @app.route('/verify-image', methods=['POST'])
 def verify_image_route():
     tmp_path = None
+    orig_tmp_path = None
     try:
         file = request.files.get('media')
+        orig_file = request.files.get('original_media')
         stored_block_hashes = request.form.get('storedBlockHashes')
         stored_overall_hash = request.form.get('storedOverallHash')
 
@@ -181,10 +183,15 @@ def verify_image_route():
         suffix = os.path.splitext(file.filename)[1] or '.png'
         tmp_path = save_upload(file, suffix)
 
+        if orig_file:
+            orig_suffix = os.path.splitext(orig_file.filename)[1] or '.png'
+            orig_tmp_path = save_upload(orig_file, orig_suffix)
+
         result = verify_image_blocks(
             tmp_path,
             stored_block_hashes,
-            stored_overall_hash
+            stored_overall_hash,
+            orig_tmp_path
         )
 
         return jsonify(result)
@@ -196,6 +203,8 @@ def verify_image_route():
     finally:
         if tmp_path and os.path.exists(tmp_path):
             os.remove(tmp_path)
+        if orig_tmp_path and os.path.exists(orig_tmp_path):
+            os.remove(orig_tmp_path)
 
 
 if __name__ == '__main__':

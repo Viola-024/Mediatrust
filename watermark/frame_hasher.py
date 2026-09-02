@@ -160,7 +160,7 @@ def normalize_color_and_lighting(orig_img, test_img):
 def generate_frame_comparison(orig_img, tamp_img):
     """
     Generate visual difference overlay with bounding boxes on genuinely modified regions.
-    Automatically removes editor black pillarbox bars to focus only on content.
+    Detects minute pen strokes, lines, doodles, text, stickers, and localized edits.
     """
     try:
         orig_clean = crop_letterbox_borders(orig_img)
@@ -172,28 +172,23 @@ def generate_frame_comparison(orig_img, tamp_img):
         else:
             tamp_img_res = tamp_clean
 
-        norm_tamp = normalize_color_and_lighting(orig_clean, tamp_img_res)
-
-        orig_b = cv2.GaussianBlur(orig_clean, (5, 5), 0)
-        tamp_b = cv2.GaussianBlur(norm_tamp, (5, 5), 0)
-
-        diff = cv2.absdiff(orig_b, tamp_b)
+        diff = cv2.absdiff(orig_clean, tamp_img_res)
         gray_diff = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
 
-        _, thresh = cv2.threshold(gray_diff, 40, 255, cv2.THRESH_BINARY)
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
-        thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
-        thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+        # Threshold to capture fine markings and edits
+        _, thresh = cv2.threshold(gray_diff, 20, 255, cv2.THRESH_BINARY)
+        kernel_clean = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+        thresh_clean = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel_clean)
 
         heatmap = cv2.applyColorMap(gray_diff, cv2.COLORMAP_JET)
         diff_vis = cv2.addWeighted(tamp_img_res, 0.6, heatmap, 0.4, 0)
 
-        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(thresh_clean, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         bounding_boxes = 0
         for c in contours:
-            if cv2.contourArea(c) > 400:
-                x, y, bw, bh = cv2.boundingRect(c)
-                cv2.rectangle(diff_vis, (x, y), (x + bw, y + bh), (0, 0, 255), 2)
+            x, y, bw, bh = cv2.boundingRect(c)
+            if bw * bh >= 16 or cv2.contourArea(c) >= 8:
+                cv2.rectangle(diff_vis, (max(0, x - 2), max(0, y - 2)), (min(w, x + bw + 2), min(h, y + bh + 2)), (0, 0, 255), 2)
                 bounding_boxes += 1
 
         _, buf_orig = cv2.imencode('.jpg', orig_clean, [cv2.IMWRITE_JPEG_QUALITY, 85])
@@ -444,10 +439,10 @@ def hash_image(image_path):
     }
 
 
-def verify_image_blocks(image_path, stored_block_hashes, stored_overall_hash):
+def verify_image_blocks(image_path, stored_block_hashes, stored_overall_hash, orig_image_path=None):
     """
     Re-hash image blocks and identify which blocks were tampered.
-    Also generates visual overlay data for tampered regions.
+    Also generates visual overlay and heatmaps for tampered regions.
     """
     img = cv2.imread(image_path)
 
@@ -457,53 +452,95 @@ def verify_image_blocks(image_path, stored_block_hashes, stored_overall_hash):
     height, width = img.shape[:2]
     block_size = 64
 
+    orig_img = None
+    if orig_image_path and os.path.exists(orig_image_path):
+        orig_img = cv2.imread(orig_image_path)
+        if orig_img is not None and orig_img.shape[:2] != (height, width):
+            img = cv2.resize(img, (orig_img.shape[1], orig_img.shape[0]))
+            height, width = orig_img.shape[:2]
+
     tampered_blocks = []
     intact_blocks = []
     block_index = 0
+    visual_comparisons = []
+    edit_diagnostics = []
 
     row = 0
     while row < height:
         col = 0
         while col < width:
-            block = img[row:row+block_size, col:col+block_size]
-            _, buffer = cv2.imencode('.jpg', block)
-            block_bytes = base64.b64encode(buffer.tobytes()).decode('utf-8')
-            block_hash = hashlib.sha256(block_bytes.encode()).hexdigest()
+            b_h = min(block_size, height - row)
+            b_w = min(block_size, width - col)
+            sub_block = img[row:row+b_h, col:col+b_w]
 
-            if block_index < len(stored_block_hashes):
+            is_block_tampered = False
+
+            if orig_img is not None:
+                orig_block = orig_img[row:row+b_h, col:col+b_w]
+                # Check maximum channel difference per pixel in the block
+                diff_matrix = np.max(np.abs(orig_block.astype(np.float32) - sub_block.astype(np.float32)), axis=2)
+                # Count pixels with noticeable color change (> 20 intensity delta)
+                tampered_pixel_count = np.count_nonzero(diff_matrix > 20)
+                mean_diff = np.mean(diff_matrix)
+
+                # Any cluster of >= 6 altered pixels (e.g. line, scribble, text, smudge) or general shift
+                if tampered_pixel_count >= 6 or mean_diff > 6.0:
+                    is_block_tampered = True
+            elif stored_block_hashes and block_index < len(stored_block_hashes):
+                _, buffer = cv2.imencode('.jpg', sub_block)
+                block_bytes = base64.b64encode(buffer.tobytes()).decode('utf-8')
+                block_hash = hashlib.sha256(block_bytes.encode()).hexdigest()
                 stored = stored_block_hashes[block_index]["hash"]
                 if block_hash != stored:
-                    tampered_blocks.append({
-                        "block_index": block_index,
-                        "row": row,
-                        "col": col,
-                        "width": min(block_size, width - col),
-                        "height": min(block_size, height - row)
-                    })
-                else:
-                    intact_blocks.append(block_index)
+                    is_block_tampered = True
+
+            if is_block_tampered:
+                tampered_blocks.append({
+                    "block_index": block_index,
+                    "row": row,
+                    "col": col,
+                    "width": b_w,
+                    "height": b_h
+                })
+            else:
+                intact_blocks.append(block_index)
 
             block_index += 1
             col += block_size
         row += block_size
 
-    tamper_percentage = (len(tampered_blocks) / block_index * 100) if block_index > 0 else 0
+    total_b = max(1, block_index)
+    tamper_percentage = (len(tampered_blocks) / total_b * 100)
+    is_tampered = len(tampered_blocks) > 0
 
     tamper_description = generate_tamper_description(
         tampered_blocks, width, height
     )
 
+    if orig_img is not None and is_tampered:
+        comp = generate_frame_comparison(orig_img, img)
+        if comp:
+            comp["frame_index"] = 0
+            visual_comparisons.append(comp)
+        edit_diagnostics.append(f"🎨 Visual Region Modifications: {len(tampered_blocks)} block(s) modified in {tamper_description}.")
+    elif not is_tampered:
+        edit_diagnostics.append(f"✅ Content Preserved: All {len(intact_blocks)} image blocks verified authentic.")
+
     return {
         "total_blocks": block_index,
+        "total_frames": block_index,
         "tampered_blocks": tampered_blocks,
+        "tampered_frames": [{"frame_index": b["block_index"], "row": b["row"], "col": b["col"]} for b in tampered_blocks],
         "tampered_count": len(tampered_blocks),
         "intact_count": len(intact_blocks),
         "tamper_percentage": round(tamper_percentage, 2),
-        "verdict": "TAMPERED" if len(tampered_blocks) > 0 else "AUTHENTIC",
+        "verdict": "TAMPERED" if is_tampered else "AUTHENTIC",
         "image_width": width,
         "image_height": height,
         "block_size": block_size,
-        "tamper_description": tamper_description
+        "tamper_description": tamper_description,
+        "edit_diagnostics": edit_diagnostics,
+        "visual_comparisons": visual_comparisons
     }
 
 

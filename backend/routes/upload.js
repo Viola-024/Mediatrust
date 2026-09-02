@@ -129,7 +129,8 @@ router.post('/', verifyToken, upload.single('media'), async (req, res) => {
       claimId,
       finalHash,
       totalFrames,
-      mediaType: isVideo ? 'video' : 'image'
+      mediaType: isVideo ? 'video' : 'image',
+      fileName: file.filename
     });
 
   } catch (err) {
