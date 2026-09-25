@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import NotificationCenter from '../components/NotificationCenter';
+import MapPin from '../components/MapPin';
 
 function Gallery() {
   const navigate = useNavigate();
@@ -74,13 +75,16 @@ function Gallery() {
       }
     }
 
-    // Append any local-only items not yet in cloud
     for (const item of localItems) {
       const key = item.claimId || item.serverFileName || item.filename;
       if (key && !seen.has(key)) {
         seen.add(key);
         merged.push(item);
       }
+    }
+
+    if (serverItems.length > 0) {
+      localStorage.setItem('mediatrust_gallery', JSON.stringify(merged));
     }
 
     setMediaItems(merged);
@@ -454,11 +458,12 @@ function Gallery() {
                       </div>
 
                       {item.gpsLocation?.latitude && item.gpsLocation?.longitude && (
-                        <div style={styles.metaItem}>
-                          <span style={styles.metaIcon}>📍</span>
-                          <span style={styles.metaText}>
-                            {Number(item.gpsLocation.latitude).toFixed(4)}°, {Number(item.gpsLocation.longitude).toFixed(4)}°
-                          </span>
+                        <div style={{...styles.metaItem, flexDirection: 'column', alignItems: 'flex-start', gap: '8px'}}>
+                          <div style={{display: 'flex', alignItems: 'center', gap: '6px'}}>
+                            <span style={styles.metaIcon}>📍</span>
+                            <span style={styles.metaText}>Location Pinned</span>
+                          </div>
+                          <MapPin latitude={item.gpsLocation.latitude} longitude={item.gpsLocation.longitude} height="100px" />
                         </div>
                       )}
 

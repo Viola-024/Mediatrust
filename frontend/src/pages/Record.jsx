@@ -238,15 +238,17 @@ function Record() {
     setError('');
 
     try {
-      let latitude = '12.9716';
-      let longitude = '77.5946';
+      let latitude = '12.8628'; // Fallback to Mangalore/Karnataka region if blocked
+      let longitude = '74.8516';
       try {
         const pos = await new Promise((resolve, reject) =>
-          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 })
+          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000, enableHighAccuracy: true })
         );
         latitude = pos.coords.latitude.toString();
         longitude = pos.coords.longitude.toString();
-      } catch {}
+      } catch (err) {
+        console.warn('Geolocation blocked or timed out, using fallback.', err);
+      }
 
       const fileName = capturedType === 'video' ? 'recorded_video.webm' : 'captured_photo.png';
       const file = new File([capturedMedia.blob], fileName, {
@@ -307,8 +309,20 @@ function Record() {
       const formData = new FormData();
       formData.append('media', selectedFile);
       formData.append('mediaType', selectedFile.type.includes('video') ? 'video' : 'image');
-      formData.append('latitude', '12.9716');
-      formData.append('longitude', '77.5946');
+      let latitude = '12.8628'; // Fallback
+      let longitude = '74.8516';
+      try {
+        const pos = await new Promise((resolve, reject) =>
+          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000, enableHighAccuracy: true })
+        );
+        latitude = pos.coords.latitude.toString();
+        longitude = pos.coords.longitude.toString();
+      } catch (err) {
+        console.warn('Geolocation blocked or timed out, using fallback.', err);
+      }
+
+      formData.append('latitude', latitude);
+      formData.append('longitude', longitude);
       formData.append('deviceId', 'DEVICE-' + Math.random().toString(36).substr(2, 9));
       formData.append('sessionId', 'SESSION-' + Math.random().toString(36).substr(2, 9));
 
