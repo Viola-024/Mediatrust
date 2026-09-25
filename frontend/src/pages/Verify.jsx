@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import NotificationCenter from '../components/NotificationCenter';
 
 function Verify() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [claimId, setClaimId] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
   const [result, setResult] = useState(null);
@@ -12,6 +13,14 @@ function Verify() {
   const [error, setError] = useState('');
 
   const [activeSection, setActiveSection] = useState(1);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const qClaimId = params.get('claimId') || location.state?.claimId;
+    if (qClaimId) {
+      setClaimId(qClaimId.trim());
+    }
+  }, [location]);
 
   const handleVerify = async () => {
     if (!selectedFile) {

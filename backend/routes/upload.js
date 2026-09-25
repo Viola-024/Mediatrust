@@ -139,4 +139,63 @@ router.post('/', verifyToken, upload.single('media'), async (req, res) => {
   }
 });
 
+// GET /api/upload/my-media - Fetch all authenticated media for the logged in user
+router.get('/my-media', verifyToken, async (req, res) => {
+  try {
+    const records = await MediaRecord.find({ userId: req.user.userId })
+      .sort({ timestamp: -1 });
+
+    const formattedRecords = records.map(r => ({
+      _id: r._id,
+      claimId: r.claimId,
+      fileName: r.fileName,
+      mediaType: r.mediaType || 'video',
+      timestamp: r.timestamp,
+      date: new Date(r.timestamp).toLocaleString(),
+      gpsLocation: r.gpsLocation,
+      verdict: r.verdict || 'authentic',
+      totalFrames: r.totalFrames || 0,
+      finalHash: r.finalHash,
+      url: `http://localhost:5000/uploads/${r.fileName}`,
+      serverFileName: r.fileName,
+      filename: r.mediaType === 'video'
+        ? `MediaTrust_Video_${r.claimId}.webm`
+        : `MediaTrust_Photo_${r.claimId}.png`
+    }));
+
+    res.json({ success: true, count: formattedRecords.length, media: formattedRecords });
+  } catch (err) {
+    console.error('Error fetching user media:', err);
+    res.status(500).json({ message: 'Failed to retrieve media library', error: err.message });
+  }
+});
+
+// DELETE /api/upload/:claimId - Delete a media record
+router.delete('/:claimId', verifyToken, async (req, res) => {
+  try {
+    const { claimId } = req.params;
+    const record = await MediaRecord.findOne({ claimId, userId: req.user.userId });
+    if (!record) {
+      return res.status(404).json({ message: 'Media record not found or unauthorized' });
+    }
+
+    // Try to remove physical file if it exists
+    const filePath = path.join(__dirname, '..', 'uploads', record.fileName);
+    if (fs.existsSync(filePath)) {
+      try {
+        fs.unlinkSync(filePath);
+      } catch (fsErr) {
+        console.warn('Could not delete physical file:', fsErr.message);
+      }
+    }
+
+    await MediaRecord.deleteOne({ _id: record._id });
+
+    res.json({ success: true, message: 'Media record deleted successfully', claimId });
+  } catch (err) {
+    console.error('Error deleting media record:', err);
+    res.status(500).json({ message: 'Failed to delete media', error: err.message });
+  }
+});
+
 module.exports = router;
